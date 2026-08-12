@@ -478,7 +478,7 @@ async function appendSession(session){
     });
 
     state.lastSavedSessionId = session.id;
-    state.saveStatus = '게임 결과가 Firebase Firestore에 정상 저장되었습니다. 1, 2등과 꼴등은 보상을 받을 수 있습니다! 로그아웃 시 익명 닉네임이 바뀔 가능성이 있습니다. 점수가 충분하다면 증명을 위해 화면을 캡쳐해두세요.';
+    state.saveStatus = '게임 결과가 Firebase Firestore에 정상 저장되었습니다. 1등과 2등은 보상을 받을 수 있습니다! 로그아웃 시 익명 닉네임이 바뀔 가능성이 있습니다. 점수가 충분하다면 증명을 위해 화면을 캡쳐해두세요.';
     return true;
   }catch(e){
     console.error('Firestore 데이터 저장 실패', e);
@@ -509,11 +509,11 @@ function exportJSON(){
 }
 function exportCSV(){
   if(!requireDownloadPassword()) return;
-  const rows = [['participant_id','session_date','human_score','ai_score','winner','round','hot_segment','landing_segment','human_choice','human_matched','human_reward','ai_choice','ai_matched','ai_reward']];
+  const rows = [['participant_id','user_email','session_date','human_score','ai_score','winner','round','hot_segment','landing_segment','human_choice','human_matched','human_reward','ai_choice','ai_matched','ai_reward']];
   state.allSessions.forEach(s=>{
     s.rounds.forEach(r=>{
       rows.push([
-        s.participantId, s.date, s.humanScore, s.aiScore, s.winner,
+        s.participantId, s.userEmail || '', s.date, s.humanScore, s.aiScore, s.winner,
         r.round, hotSegmentForRound(r.round), r.landing,
         r.humanChoice, r.humanMatched, r.humanReward,
         r.aiChoice, r.aiMatched, r.aiReward
@@ -640,6 +640,7 @@ async function finishAndSave(){
   const session = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2,8),
     participantId: state.participantId,
+    userEmail: state.userEmail,
     schoolDomain: SCHOOL_DOMAIN,
     date: new Date().toISOString(),
     humanScore: state.humanScore,
@@ -735,7 +736,7 @@ function renderHome(){
     <section class="hero">
       <div>
         <div class="eyebrow">룰렛 게임으로 뇌과학 연구에 참여하세요</div>
-        <h1>당신의 선택이<br><span class="accent">연구</span>를 완성합니다</h1>
+        <h1>게임에 <br><span class="accent">참여</span>하시겠습니까?</h1>
         <p>간단한 게임과 설문을 통해 뇌의 의사결정과 보상 반응을 연구합니다. 7라운드 동안 룰렛을 돌리며, 당신의 선택을 실시간으로 학습하는 Q-learning 인공지능과 겨뤄보세요. 한민고 학교 이메일로 로그인한 뒤 익명 닉네임으로 참여할 수 있습니다.</p>
         <div class="hero-actions">
           <button class="btn-primary" data-action="goto" data-view="game">🎮 게임 참여하기 →</button>
@@ -766,7 +767,7 @@ function renderHome(){
       <div class="step-card"><div class="step-num">04</div><div class="step-icon">❤️</div><h3>결과 비교</h3><p>당신의 최종 점수와 AI의 점수를 비교해 누가 더 나은 결정을 내렸는지 확인합니다.</p></div>
     </div>
 
-    <div class="footer-note">⚠ 본 연구는 <b>한민고 계정으로 로그인 후 익명 참가자 ID</b>로 진행되며, 순위에따라 차등적인 금전적 보상이 있는 시뮬레이션입니다. 수집된 데이터는 "데이터 & 결과" 페이지에서 권한이 있다면 열람·다운로드할 수 있습니다.</div>
+    <div class="footer-note">⚠ 본 연구는 <b>한민고 계정으로 로그인 후 익명 참가자 ID</b>로 진행되며, 순위에따라 차등적인 금전적 보상이 있는 시뮬레이션입니다. 수집된 데이터는 "데이터 & 결과" 페이지에서 권한 여부에 따라 열람·다운로드할 수 있습니다.</div>
   </div>`;
 }
 
@@ -1044,7 +1045,7 @@ function renderAbout(){
     <div class="page-head"><h2>연구 소개</h2></div>
     <div class="about-block">
       <h3>연구 목적</h3>
-      <p>NeuroRoulette은 확률적 보상 환경에서 인간의 의사결정 전략과 강화학습(Q-learning) 알고리즘의 학습 전략을 나란히 비교하는 플랫폼입니다. 각 라운드마다 룰렛의 "핫 세그먼트"는 정해진 규칙에 따라 이동하며, 참여자는 제한된 힌트만으로 이 패턴을 추론해야 합니다.</p>
+      <p>NeuroRoulette은 확률적 보상 환경에서 인간의 의사결정 전략과 강화학습(Q-learning) 알고리즘의 학습 전략을 나란히 비교하는 플랫폼입니다. 각 라운드마다 룰렛의 "핫 세그먼트"는 규칙에 따라 이동하며, 참여자는 제한된 힌트만으로 이 패턴을 추론해야 합니다.</p>
     </div>
     <div class="about-block">
       <h3>Q-learning 에이전트</h3>
@@ -1059,8 +1060,8 @@ function renderAbout(){
 
 function renderFAQ(){
   const items = [
-    ['이 게임은 실제 보상이 있나요?', '네. NeuroRoulette은 실제 보상을 바탕으로 참가를 유도한 연구·교육용 프로젝트입니다.'],
-    ['로그인이 필요한가요?', '네. 한민고 이메일로 로그인을 해야하며, 그 후 자동으로 부여되는 익명 참가자 ID로 바로 참여할 수 있습니다.'],
+    ['이 게임은 실제 보상이 있나요?', '네. NeuroRoulette은 보상을 바탕으로 참가를 유도한 연구·교육용 프로젝트입니다.'],
+    ['로그인이 필요한가요?', '네. 한민고 이메일로 로그인을 해야하며, 그 후 자동으로 부여되는 익명 참가자 ID로 참여할 수 있습니다.'],
     ['왜 라운드가 7번인가요?', '짧은 시행 안에서도 패턴 학습과 탐색-활용(exploration-exploitation) 딜레마를 관찰할 수 있는 표준적인 길이로 설정했습니다.'],
     ['AI는 어떻게 학습하나요?', 'Q-learning 알고리즘이 매 라운드 보상을 받아 세그먼트별 가치를 갱신하며, 인간과 동일한 룰렛 환경에서 독립적으로 선택합니다.'],
     ['내 데이터는 어디에 저장되나요?', '모든 세션 기록은 익명 참가자 ID와 함께 공유 데이터셋에 저장되며, "데이터 & 결과" 페이지에서 전체가 공개됩니다.'],
