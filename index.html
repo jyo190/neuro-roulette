@@ -256,6 +256,103 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .result-ranking{margin-top:24px}.rank-me{border:1px solid rgba(217,164,65,.45);background:rgba(217,164,65,.08);border-radius:10px;padding:14px 16px;margin-bottom:12px;font-weight:700}.rank-list{display:flex;flex-direction:column}.rank-row{display:grid;grid-template-columns:50px 1fr 90px 100px;align-items:center;gap:10px;padding:11px 8px;border-bottom:1px solid var(--line);font-size:12px}.rank-pos{font-family:var(--font-display);font-size:18px;color:var(--gold);font-weight:900}.rank-row.current{background:rgba(184,31,42,.10)}
 .save-status{margin:18px 0 0;padding:12px 15px;border-radius:8px;text-align:center;font-size:13px}.save-status.ok{color:#5dd08a;border:1px solid rgba(93,208,138,.35);background:rgba(93,208,138,.08)}.save-status.fail{color:var(--red-glow);border:1px solid rgba(230,57,70,.4);background:rgba(230,57,70,.08)}
 
+
+/* ===== Guided tutorial / Grinder sparks / Final FX ===== */
+
+/* Guided tutorial overlay */
+.tutorial-overlay{
+  position:fixed; inset:0; z-index:180;
+  pointer-events:none;
+}
+.tutorial-dim{
+  position:absolute; inset:0;
+  background:transparent;
+  backdrop-filter:none;
+}
+.tutorial-focus{
+  position:fixed;
+  border:3px solid rgba(255,255,255,.96);
+  border-radius:18px;
+  box-shadow:
+    0 0 14px rgba(255,255,255,.82),
+    0 0 34px rgba(255,255,255,.28);
+  transition:left .35s ease, top .35s ease, width .35s ease, height .35s ease;
+  z-index:182;
+}
+.tutorial-focus::before{
+  content:'';
+  position:absolute; inset:-8px;
+  border:1px dashed rgba(255,255,255,.72);
+  border-radius:22px;
+  animation:tutorialDash 1.15s linear infinite;
+}
+@keyframes tutorialDash{
+  from{transform:rotate(0deg)}
+  to{transform:rotate(1deg)}
+}
+.tutorial-bubble{
+  position:fixed;
+  z-index:183;
+  max-width:310px;
+  padding:14px 16px;
+  border:1px solid rgba(255,255,255,.28);
+  background:rgba(16,14,13,.96);
+  color:var(--text);
+  border-radius:12px;
+  box-shadow:0 18px 40px rgba(0,0,0,.45);
+  font-size:13px;
+  line-height:1.65;
+}
+.tutorial-bubble b{color:#fff}
+.tutorial-bubble .mini{
+  margin-top:7px;
+  color:var(--muted);
+  font-size:11px;
+}
+.tutorial-bubble .tutorial-btn{
+  pointer-events:auto;
+  margin-top:10px;
+  width:100%;
+  border:1px solid rgba(255,255,255,.25);
+  background:#f1ece7;
+  color:#111;
+  border-radius:8px;
+  padding:9px 10px;
+  font-weight:800;
+  cursor:pointer;
+}
+.tutorial-counter{
+  position:fixed;
+  z-index:184;
+  top:88px; left:50%;
+  transform:translateX(-50%);
+  padding:6px 12px;
+  border-radius:999px;
+  border:1px solid rgba(255,255,255,.25);
+  background:rgba(10,9,8,.88);
+  font-size:11px;
+  letter-spacing:1px;
+  color:#fff;
+}
+.tutorial-target{
+  position:relative;
+  z-index:181 !important;
+}
+body.tutorial-active .tutorial-target{
+  pointer-events:auto !important;
+}
+
+/* Final result overlay */
+.final-fx{position:fixed;inset:0;z-index:200;display:flex;align-items:center;justify-content:center;pointer-events:none;background:radial-gradient(circle at center,rgba(0,0,0,.15),rgba(0,0,0,.72));animation:finalFxFade 2.15s ease forwards}
+.final-fx-inner{text-align:center;animation:finalFxPop 1.2s cubic-bezier(.2,1.25,.25,1) both}
+.final-fx-word{font-family:var(--font-display);font-weight:900;letter-spacing:8px;font-size:clamp(72px,14vw,180px);line-height:.9}
+.final-fx.win .final-fx-word{color:#f5d36b;text-shadow:0 0 12px rgba(245,211,107,.7),0 0 40px rgba(217,164,65,.45)}
+.final-fx.lose .final-fx-word{color:var(--red-glow);text-shadow:0 0 12px rgba(230,57,70,.75),0 0 42px rgba(184,31,42,.55)}
+.final-fx.tie .final-fx-word{color:var(--text);text-shadow:0 0 30px rgba(255,255,255,.28)}
+.final-fx-sub{margin-top:18px;font-size:15px;letter-spacing:2px;color:var(--text)}
+@keyframes finalFxPop{0%{opacity:0;transform:scale(.35) rotate(-5deg);filter:blur(7px)}55%{opacity:1;transform:scale(1.12) rotate(1deg);filter:blur(0)}75%{transform:scale(.98)}100%{transform:scale(1)}}
+@keyframes finalFxFade{0%,74%{opacity:1}100%{opacity:0;visibility:hidden}}
+
 /* ===== School login ===== */
 .login-shell{min-height:calc(100vh - 72px);display:flex;align-items:center;justify-content:center;padding:50px 20px;}
 .login-card{width:min(460px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:34px;box-shadow:0 24px 70px rgba(0,0,0,.45);}
@@ -385,6 +482,10 @@ const state = {
   aiLearningLog:[],
   lastSavedSessionId:null,
   saving:false,
+  finalEffectPlayed:false,
+  tutorialActive:false,
+  tutorialStep:0,
+  practiceRound:false,
 };
 
 /* ---------- Firestore helpers ---------- */
@@ -416,6 +517,44 @@ function ensureParticipant(){
   // 페이지에 새로 접속하거나 새로고침할 때마다 새로운 익명 닉네임을 만든다.
   state.participantId = makeRandomNickname();
 }
+function tutorialSeenKey(email){
+  return `nr_tutorial_seen_${String(email||'').trim().toLowerCase()}`;
+}
+function hasSeenTutorial(email){
+  const normalized = String(email||'').trim().toLowerCase();
+  if(!normalized) return false;
+
+  // 1차: 같은 브라우저/같은 사이트 주소에서 저장된 로컬 완료 기록
+  try{
+    if(localStorage.getItem(tutorialSeenKey(normalized)) === '1'){
+      return true;
+    }
+  }catch(e){}
+
+  // 2차: Firestore에서 이미 이 이메일로 완료된 게임 기록이 있으면
+  // 다른 브라우저/다른 기기에서도 튜토리얼을 다시 보여주지 않는다.
+  const alreadyPlayed = (state.allSessions || []).some(session =>
+    String(session.userEmail || '').trim().toLowerCase() === normalized
+  );
+
+  if(alreadyPlayed){
+    // 이후에는 로컬에서도 바로 확인할 수 있도록 캐시
+    try{
+      localStorage.setItem(tutorialSeenKey(normalized), '1');
+    }catch(e){}
+    return true;
+  }
+
+  return false;
+}
+function markTutorialSeen(email){
+  try{
+    localStorage.setItem(tutorialSeenKey(email), '1');
+  }catch(e){
+    console.warn('튜토리얼 완료 상태 저장 실패', e);
+  }
+}
+
 function validSchoolEmail(value){
   const email=String(value||'').trim().toLowerCase();
   return /^[^\s@]+@hanmin\.hs\.kr$/.test(email) ? email : '';
@@ -423,9 +562,19 @@ function validSchoolEmail(value){
 function maskEmail(email){
   const [name,domain]=String(email).split('@');
   if(!name||!domain) return '';
-  return `${name.slice(0,2)}${'*'.repeat(Math.max(2,name.length-2))}@${domain}`;
+
+  let maskedName = name;
+  if(name.length === 1){
+    maskedName = name;
+  }else if(name.length === 2){
+    maskedName = name[0] + '*';
+  }else{
+    maskedName = name.slice(0,2) + '*'.repeat(name.length-2);
+  }
+
+  return `${maskedName}@${domain}`;
 }
-function login(){
+async function login(){
   const input=document.getElementById('school-email');
   const email=validSchoolEmail(input ? input.value : '');
   if(!email){
@@ -434,10 +583,21 @@ function login(){
     setTimeout(()=>document.getElementById('school-email')?.focus(),0);
     return;
   }
+
   state.authenticated=true;
   state.userEmail=email;
   state.loginError='';
   try{ sessionStorage.setItem('nr_school_email',email); }catch(e){}
+
+  // 튜토리얼 1회 여부를 Firestore 기록까지 포함해 판단할 수 있도록 최신 기록 로드
+  await loadAllSessions();
+
+  // 과거 완료 기록이 있으면 로컬에도 완료 표시를 남긴다.
+  if((state.allSessions || []).some(s =>
+      String(s.userEmail || '').trim().toLowerCase() === email)){
+    markTutorialSeen(email);
+  }
+
   state.view='home';
   render();
 }
@@ -446,6 +606,7 @@ function logout(){
   state.userEmail='';
   state.loginError='';
   try{ sessionStorage.removeItem('nr_school_email'); }catch(e){}
+  resetGame();
   state.view='home';
   ensureParticipant();
   render();
@@ -542,25 +703,51 @@ function resetGame(){
   state.aiLearningLog = [];
   state.lastSavedSessionId = null;
   state.saving = false;
+  state.aiActionThisRound = null;
+  state.wheelRotation = 0;
+  state.finalEffectPlayed = false;
+  state.tutorialActive = false;
+  state.tutorialStep = 0;
+  state.practiceRound = false;
 }
-function startGame(){
+function startGame(withTutorial=false){
   if(!state.authenticated){ state.view='login'; render(); return; }
   resetGame();
   state.view = 'game';
+  state.tutorialActive = !!withTutorial;
+  state.tutorialStep = 0;
+  state.practiceRound = !!withTutorial;
   render();
+  if(state.tutorialActive){
+    setTimeout(updateTutorialOverlay, 60);
+  }
 }
 function selectSegment(i){
   if(state.spinning || state.roundResult) return;
+
   state.selected = i;
   render();
+
+  if(state.tutorialActive && state.tutorialStep===0){
+    setTimeout(()=>tutorialAdvance(0), 80);
+  }
 }
 function spin(){
   if(state.selected===null || state.spinning || state.roundResult) return;
+  if(state.tutorialActive && state.tutorialStep!==1) return;
 
   const round = state.round;
-  const probs = probsForRound(round);
+
+  // 튜토리얼 연습은 실제 실험 패턴을 미리 노출하지 않는다.
+  const probs = state.practiceRound
+    ? new Array(N).fill(1 / N)
+    : probsForRound(round);
+
   const landing = weightedPick(probs);
-  const aiAction = aiChoose();
+  const aiAction = state.practiceRound
+    ? Math.floor(Math.random() * N)
+    : aiChoose();
+
   state.aiActionThisRound = aiAction;
 
   const fromRotation = state.wheelRotation;
@@ -574,30 +761,72 @@ function spin(){
   const toRotation = fromRotation + 7*360 + delta;
   state.wheelRotation = toRotation;
   state.spinning = true;
+
+  // 스핀 중에는 튜토리얼 오버레이를 잠시 숨겨 정상 게임 화면만 보이게 한다.
+  if(state.tutorialActive && state.tutorialStep===1){
+    document.body.classList.remove('tutorial-active');
+  }
+
   render();
 
   // innerHTML 재렌더링 때문에 CSS transition이 시작점을 잃는 문제를
   // Web Animations API로 해결한다.
   requestAnimationFrame(()=>{
     const wheel = document.querySelector('.center-col .wheel-face');
-    if(!wheel){ resolveRound(landing, aiAction, round); return; }
 
-    const animation = wheel.animate([
-      {transform:`rotate(${fromRotation}deg)`, filter:'blur(0px)', offset:0},
-      {transform:`rotate(${fromRotation + 120}deg)`, filter:'blur(.25px)', offset:.10},
-      {transform:`rotate(${toRotation - 150}deg)`, filter:'blur(.55px)', offset:.72},
-      {transform:`rotate(${toRotation - 18}deg)`, filter:'blur(0px)', offset:.93},
-      {transform:`rotate(${toRotation + 4}deg)`, filter:'blur(0px)', offset:.975},
-      {transform:`rotate(${toRotation}deg)`, filter:'blur(0px)', offset:1}
-    ], {
-      duration:3900,
-      easing:'cubic-bezier(.12,.68,.10,1)',
-      fill:'forwards'
-    });
+    let settled = false;
+    const finishSpin = ()=>{
+      if(settled) return;
+      settled = true;
+      resolveRound(landing, aiAction, round);
+    };
 
-    animation.finished
-      .then(()=>resolveRound(landing, aiAction, round))
-      .catch(()=>resolveRound(landing, aiAction, round));
+    if(!wheel){
+      finishSpin();
+      return;
+    }
+
+    // 어떤 브라우저에서도 무한 대기하지 않도록 안전 타이머를 둔다.
+    const fallbackTimer = setTimeout(finishSpin, 4400);
+
+    if(typeof wheel.animate !== 'function'){
+      wheel.style.transform = `rotate(${toRotation}deg)`;
+      setTimeout(()=>{
+        clearTimeout(fallbackTimer);
+        finishSpin();
+      }, 900);
+      return;
+    }
+
+    try{
+      const animation = wheel.animate([
+        {transform:`rotate(${fromRotation}deg)`, filter:'blur(0px)', offset:0},
+        {transform:`rotate(${fromRotation + 120}deg)`, filter:'blur(.25px)', offset:.10},
+        {transform:`rotate(${toRotation - 150}deg)`, filter:'blur(.55px)', offset:.72},
+        {transform:`rotate(${toRotation - 18}deg)`, filter:'blur(0px)', offset:.93},
+        {transform:`rotate(${toRotation + 4}deg)`, filter:'blur(0px)', offset:.975},
+        {transform:`rotate(${toRotation}deg)`, filter:'blur(0px)', offset:1}
+      ], {
+        duration:3900,
+        easing:'cubic-bezier(.12,.68,.10,1)',
+        fill:'forwards'
+      });
+
+      animation.finished
+        .then(()=>{
+          clearTimeout(fallbackTimer);
+          finishSpin();
+        })
+        .catch(()=>{
+          clearTimeout(fallbackTimer);
+          finishSpin();
+        });
+    }catch(err){
+      console.warn('룰렛 애니메이션 대체 처리', err);
+      clearTimeout(fallbackTimer);
+      wheel.style.transform = `rotate(${toRotation}deg)`;
+      setTimeout(finishSpin, 900);
+    }
   });
 }
 function resolveRound(landing, aiAction, round){
@@ -605,27 +834,98 @@ function resolveRound(landing, aiAction, round){
   const aiMatched = aiAction === landing;
   const humanReward = rewardFor(humanMatched, landing);
   const aiReward = rewardFor(aiMatched, landing);
+
+  // 튜토리얼용 연습 라운드는 본게임 7라운드 데이터에 포함하지 않는다.
+  if(state.practiceRound){
+    state.spinning = false;
+    state.roundResult = {
+      landing,
+      humanMatched,
+      aiMatched,
+      humanReward,
+      aiReward,
+      practice:true
+    };
+
+    if(state.tutorialActive && state.tutorialStep===1){
+      state.tutorialStep = 2;
+    }
+
+    render();
+
+    if(state.tutorialActive && state.tutorialStep===2){
+      setTimeout(updateTutorialOverlay, 100);
+    }
+    return;
+  }
+
   const oldQ = Q[aiAction];
   aiLearn(aiAction, aiReward);
   const newQ = Q[aiAction];
   const oldEpsilon = epsilon;
   epsilon *= 0.75;
-  state.aiLearningLog.unshift({round, action:aiAction, reward:aiReward, oldQ, newQ, epsilonBefore:oldEpsilon, epsilonAfter:epsilon});
+
+  state.aiLearningLog.unshift({
+    round,
+    action:aiAction,
+    reward:aiReward,
+    oldQ,
+    newQ,
+    epsilonBefore:oldEpsilon,
+    epsilonAfter:epsilon
+  });
 
   state.humanScore += humanReward;
   state.aiScore += aiReward;
-  state.roundHistory.push({round, landing, humanChoice:state.selected, aiChoice:aiAction, humanReward, aiReward, humanMatched, aiMatched});
+  state.roundHistory.push({
+    round,
+    landing,
+    humanChoice:state.selected,
+    aiChoice:aiAction,
+    humanReward,
+    aiReward,
+    humanMatched,
+    aiMatched
+  });
   state.landingHistory.push(landing);
+
   state.spinning = false;
   state.roundResult = {landing, humanMatched, aiMatched, humanReward, aiReward};
   render();
 }
 function nextRound(){
+  // 연습 라운드 종료 → 본게임 1라운드 시작
+  if(state.practiceRound){
+    state.practiceRound = false;
+    state.tutorialActive = false;
+    state.tutorialStep = 0;
+    document.body.classList.remove('tutorial-active');
+
+    // 버튼으로 튜토리얼을 마쳐도 계정별 완료 상태 저장
+    markTutorialSeen(state.userEmail);
+
+    Q = new Array(N).fill(0);
+    epsilon = 0.5;
+    state.round = 1;
+    state.selected = null;
+    state.roundResult = null;
+    state.aiActionThisRound = null;
+    state.wheelRotation = 0;
+    state.humanScore = 0;
+    state.aiScore = 0;
+    state.roundHistory = [];
+    state.landingHistory = [];
+    state.aiLearningLog = [];
+    render();
+    return;
+  }
+
   if(state.round >= MAX_ROUNDS){
     state.view = 'survey';
     render();
     return;
   }
+
   state.round += 1;
   state.selected = null;
   state.roundResult = null;
@@ -633,6 +933,9 @@ function nextRound(){
 }
 async function finishAndSave(){
   if(state.saving) return;
+
+  // 본게임을 여기까지 완료했다면 이 계정은 튜토리얼 완료 계정으로 확정
+  markTutorialSeen(state.userEmail);
   state.saving = true;
   state.saveStatus = '결과를 저장하고 확인하는 중입니다…';
   render();
@@ -663,9 +966,135 @@ async function finishAndSave(){
   render();
 }
 
+
+/* ---------- 인터랙티브 튜토리얼 ---------- */
+const TUTORIAL_STEPS = [
+  {
+    selector:'.bet-grid',
+    html:'<b>① 먼저 아이콘 하나를 선택하세요.</b><br>8개 중 원하는 아이콘을 직접 눌러보세요.<div class="mini">선택하면 흰 테두리가 SPIN으로 이동합니다.</div>',
+    placement:'top'
+  },
+  {
+    selector:'.center-col .wheel-hub',
+    html:'<b>② 이제 SPIN!</b><br>중앙 버튼을 눌러 룰렛을 돌리세요.<div class="mini">당첨 결과가 나온 뒤 다음 안내가 이어집니다.</div>',
+    placement:'right'
+  },
+  {
+    selector:'.result-banner',
+    html:'<b>③ 결과를 확인하세요.</b><br>내 선택과 AI의 선택, 얻은 점수가 여기에 표시됩니다.<div class="mini">이 과정을 7라운드 반복합니다.</div>',
+    placement:'top',
+    button:'튜토리얼 끝내기'
+  }
+];
+
+function tutorialOverlayHTML(){
+  if(!state.tutorialActive || state.spinning) return '';
+  return `
+    <div class="tutorial-overlay" id="tutorial-overlay">
+      <div class="tutorial-dim"></div>
+      <div class="tutorial-counter">${Math.min(state.tutorialStep+1,3)} / 3 · QUICK GUIDE</div>
+      <div class="tutorial-focus" id="tutorial-focus"></div>
+      <div class="tutorial-bubble" id="tutorial-bubble"></div>
+    </div>`;
+}
+
+function placeTutorialBubble(rect, bubble, placement){
+  const margin = 18;
+  const bw = bubble.offsetWidth || 300;
+  const bh = bubble.offsetHeight || 120;
+
+  let left = rect.left + rect.width/2 - bw/2;
+  let top = rect.bottom + margin;
+
+  if(placement==='top'){
+    top = rect.top - bh - margin;
+  }else if(placement==='right'){
+    left = rect.right + margin;
+    top = rect.top + rect.height/2 - bh/2;
+  }
+
+  left = Math.max(12, Math.min(window.innerWidth - bw - 12, left));
+  top = Math.max(82, Math.min(window.innerHeight - bh - 12, top));
+
+  bubble.style.left = `${left}px`;
+  bubble.style.top = `${top}px`;
+}
+
+function updateTutorialOverlay(){
+  if(!state.tutorialActive) return;
+  const step = TUTORIAL_STEPS[state.tutorialStep];
+  if(!step) return endTutorial();
+
+  const target = document.querySelector(step.selector);
+  const focus = document.getElementById('tutorial-focus');
+  const bubble = document.getElementById('tutorial-bubble');
+
+  // innerHTML 재렌더링 직후 DOM이 아직 준비되지 않은 경우 한 번 더 시도
+  if(!target || !focus || !bubble){
+    setTimeout(updateTutorialOverlay, 120);
+    return;
+  }
+
+  document.body.classList.add('tutorial-active');
+  document.querySelectorAll('.tutorial-target').forEach(el=>el.classList.remove('tutorial-target'));
+  target.classList.add('tutorial-target');
+
+  const rect = target.getBoundingClientRect();
+  const pad = state.tutorialStep===2 ? 10 : 8;
+  focus.style.left = `${rect.left-pad}px`;
+  focus.style.top = `${rect.top-pad}px`;
+  focus.style.width = `${rect.width+pad*2}px`;
+  focus.style.height = `${rect.height+pad*2}px`;
+
+  bubble.innerHTML = step.html + (step.button ? `<button class="tutorial-btn" data-action="tutorial-end">${step.button}</button>` : '');
+  requestAnimationFrame(()=>placeTutorialBubble(rect,bubble,step.placement));
+}
+
+function tutorialAdvance(expectedStep){
+  if(!state.tutorialActive || state.tutorialStep!==expectedStep) return;
+  state.tutorialStep++;
+  render();
+  setTimeout(updateTutorialOverlay, 70);
+}
+
+function endTutorial(){
+  state.tutorialActive=false;
+  state.tutorialStep=0;
+  document.body.classList.remove('tutorial-active');
+
+  // 이 학교 이메일에서는 이후 튜토리얼을 다시 보여주지 않는다.
+  markTutorialSeen(state.userEmail);
+
+  // 연습 라운드가 끝난 상태라면 본게임을 1라운드부터 새로 시작
+  if(state.practiceRound){
+    state.practiceRound = false;
+    Q = new Array(N).fill(0);
+    epsilon = 0.5;
+    state.round = 1;
+    state.selected = null;
+    state.roundResult = null;
+    state.aiActionThisRound = null;
+    state.wheelRotation = 0;
+    state.humanScore = 0;
+    state.aiScore = 0;
+    state.roundHistory = [];
+    state.landingHistory = [];
+    state.aiLearningLog = [];
+  }
+
+  render();
+}
+
 /* ---------- 네비게이션 ---------- */
 function goto(view){
   if(!state.authenticated){ state.view='login'; render(); return; }
+
+  if(view==='game'){
+    const seen = hasSeenTutorial(state.userEmail);
+    startGame(!seen);
+    return;
+  }
+
   state.view = view;
   if(view==='data') loadAllSessions().then(render);
   render();
@@ -730,6 +1159,7 @@ function renderLogin(){
   </div>`;
 }
 
+
 function renderHome(){
   return `
   <div class="wrap">
@@ -773,12 +1203,14 @@ function renderHome(){
 
 function renderGame(){
   const round = state.round;
-  const dots = Array.from({length:MAX_ROUNDS}, (_,i)=>{
-    const n = i+1;
-    let cls = 'dot';
-    if(n < round) cls += ' done'; else if(n===round) cls += ' now';
-    return `<div class="${cls}"></div>`;
-  }).join('');
+  const dots = state.practiceRound
+    ? ''
+    : Array.from({length:MAX_ROUNDS}, (_,i)=>{
+        const n = i+1;
+        let cls = 'dot';
+        if(n < round) cls += ' done'; else if(n===round) cls += ' now';
+        return `<div class="${cls}"></div>`;
+      }).join('');
 
   const freqCounts = new Array(N).fill(0);
   state.landingHistory.forEach(i=> freqCounts[i]++);
@@ -818,12 +1250,12 @@ function renderGame(){
     <div class="result-banner">
       <div style="display:flex; justify-content:space-between; align-items:center;">
         <div><b>${round}라운드 결과</b> — 당첨 세그먼트: ${SEGMENTS[r.landing].icon} ${SEGMENTS[r.landing].name}</div>
-        <button class="btn-primary" data-action="next-round">${round>=MAX_ROUNDS?'결과 보기':'다음 라운드'} →</button>
+        <button class="btn-primary" data-action="next-round">${state.practiceRound?'본게임 시작':(round>=MAX_ROUNDS?'결과 보기':'다음 라운드')} →</button>
       </div>
       <div class="result-cols">
         <div class="result-side ${r.humanMatched?'win':'lose'}">
           <div class="result-tag">🙋 당신의 선택</div>
-          <div class="result-icon">${SEGMENTS[state.roundHistory[state.roundHistory.length-1].humanChoice].icon}</div>
+          <div class="result-icon">${SEGMENTS[state.practiceRound ? state.selected : state.roundHistory[state.roundHistory.length-1].humanChoice].icon}</div>
           <div>${r.humanMatched? '적중! 🎉' : '빗나감'}</div>
           <div class="result-reward" style="color:${r.humanReward>=0?'#5dd08a':'#e63946'}">${r.humanReward>0?'+':''}${r.humanReward}점</div>
         </div>
@@ -840,13 +1272,14 @@ function renderGame(){
   const showHint = round >= 3;
 
   return `
+  ${tutorialOverlayHTML()}
   <div class="wrap page">
     <div class="progress-dots">${dots}</div>
     <div class="game-grid">
       <div class="panel">
         <h3>진행 상황</h3>
-        <div class="round-badge">${round} / ${MAX_ROUNDS}</div>
-        <div class="round-sub">현재 라운드</div>
+        <div class="round-badge">${state.practiceRound ? '연습' : `${round} / ${MAX_ROUNDS}`}</div>
+        <div class="round-sub">${state.practiceRound ? '튜토리얼 연습 라운드 · 점수/기록 미반영' : '현재 라운드'}</div>
         <div class="score-row"><div class="score-name">🙋 내 점수</div><div class="score-val ${state.humanScore>=0?'pos':'neg'}">${state.humanScore}</div></div>
         <div class="score-row"><div class="score-name">🤖 AI 점수</div><div class="score-val ${state.aiScore>=0?'pos':'neg'}">${state.aiScore}</div></div>
         <h3 style="margin-top:24px;">AI 두뇌 상태 (Q값)</h3>
@@ -927,7 +1360,16 @@ function renderResults(){
       <td>${r.aiReward>0?'+':''}${r.aiReward}</td>
     </tr>`).join('');
 
+  const fxClass = winner==='human' ? 'win' : (winner==='ai' ? 'lose' : 'tie');
+  const fxWord = winner==='human' ? 'WIN' : (winner==='ai' ? 'LOSE' : 'DRAW');
+  const fxSub = winner==='human' ? 'AI를 이겼습니다' : (winner==='ai' ? 'AI가 승리했습니다' : '무승부입니다');
+  const finalOverlay = !state.finalEffectPlayed
+    ? `<div class="final-fx ${fxClass}"><div class="final-fx-inner"><div class="final-fx-word">${fxWord}</div><div class="final-fx-sub">${fxSub}</div></div></div>`
+    : '';
+  if(!state.finalEffectPlayed) state.finalEffectPlayed = true;
+
   return `
+  ${finalOverlay}
   <div class="wrap page">
     <div class="page-head" style="text-align:center;">
       <h2>최종 결과</h2>
@@ -1128,12 +1570,20 @@ document.getElementById('app').addEventListener('click', (e)=>{
     case 'logout': logout(); break;
     case 'export-json': exportJSON(); break;
     case 'export-csv': exportCSV(); break;
+    case 'tutorial-end': endTutorial(); break;
   }
 });
 
 document.getElementById('app').addEventListener('input', (e)=>{
   if(e.target && e.target.id==='pattern-guess') state.survey.patternGuess = e.target.value;
 });
+window.addEventListener('resize', ()=>{
+  if(state.tutorialActive) updateTutorialOverlay();
+});
+window.addEventListener('scroll', ()=>{
+  if(state.tutorialActive) updateTutorialOverlay();
+}, true);
+
 document.getElementById('app').addEventListener('keydown', (e)=>{
   if(e.target && e.target.id==='school-email' && e.key==='Enter'){
     e.preventDefault(); login();
@@ -1143,12 +1593,25 @@ document.getElementById('app').addEventListener('keydown', (e)=>{
 /* ---------- 초기화 ---------- */
 (async function init(){
   ensureParticipant();
+
   try{
     const saved=sessionStorage.getItem('nr_school_email')||'';
     const valid=validSchoolEmail(saved);
-    if(valid){ state.authenticated=true; state.userEmail=valid; }
+    if(valid){
+      state.authenticated=true;
+      state.userEmail=valid;
+    }
   }catch(e){}
+
   await loadAllSessions();
+
+  // 이미 해당 이메일로 완료된 게임 기록이 있으면
+  // 로컬 저장 여부와 상관없이 튜토리얼 완료 계정으로 처리
+  if(state.userEmail && (state.allSessions || []).some(s =>
+      String(s.userEmail || '').trim().toLowerCase() === state.userEmail)){
+    markTutorialSeen(state.userEmail);
+  }
+
   render();
 })();
 </script>
