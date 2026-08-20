@@ -517,39 +517,32 @@ function ensureParticipant(){
   // 페이지에 새로 접속하거나 새로고침할 때마다 새로운 익명 닉네임을 만든다.
   state.participantId = makeRandomNickname();
 }
-function tutorialSeenKey(email){
-  return `nr_tutorial_seen_${String(email||'').trim().toLowerCase()}`;
+const TUTORIAL_SEEN_STORAGE = 'nr_tutorial_seen_accounts_v1';
+
+function getTutorialSeenAccounts(){
+  try{
+    const raw = localStorage.getItem(TUTORIAL_SEEN_STORAGE);
+    const parsed = raw ? JSON.parse(raw) : {};
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  }catch(e){
+    return {};
+  }
 }
+
 function hasSeenTutorial(email){
   const normalized = String(email||'').trim().toLowerCase();
   if(!normalized) return false;
-
-  // 1차: 같은 브라우저/같은 사이트 주소에서 저장된 로컬 완료 기록
-  try{
-    if(localStorage.getItem(tutorialSeenKey(normalized)) === '1'){
-      return true;
-    }
-  }catch(e){}
-
-  // 2차: Firestore에서 이미 이 이메일로 완료된 게임 기록이 있으면
-  // 다른 브라우저/다른 기기에서도 튜토리얼을 다시 보여주지 않는다.
-  const alreadyPlayed = (state.allSessions || []).some(session =>
-    String(session.userEmail || '').trim().toLowerCase() === normalized
-  );
-
-  if(alreadyPlayed){
-    // 이후에는 로컬에서도 바로 확인할 수 있도록 캐시
-    try{
-      localStorage.setItem(tutorialSeenKey(normalized), '1');
-    }catch(e){}
-    return true;
-  }
-
-  return false;
+  const accounts = getTutorialSeenAccounts();
+  return accounts[normalized] === true;
 }
+
 function markTutorialSeen(email){
+  const normalized = String(email||'').trim().toLowerCase();
+  if(!normalized) return;
   try{
-    localStorage.setItem(tutorialSeenKey(email), '1');
+    const accounts = getTutorialSeenAccounts();
+    accounts[normalized] = true;
+    localStorage.setItem(TUTORIAL_SEEN_STORAGE, JSON.stringify(accounts));
   }catch(e){
     console.warn('튜토리얼 완료 상태 저장 실패', e);
   }
@@ -574,7 +567,7 @@ function maskEmail(email){
 
   return `${maskedName}@${domain}`;
 }
-async function login(){
+function login(){
   const input=document.getElementById('school-email');
   const email=validSchoolEmail(input ? input.value : '');
   if(!email){
@@ -588,15 +581,6 @@ async function login(){
   state.userEmail=email;
   state.loginError='';
   try{ sessionStorage.setItem('nr_school_email',email); }catch(e){}
-
-  // 튜토리얼 1회 여부를 Firestore 기록까지 포함해 판단할 수 있도록 최신 기록 로드
-  await loadAllSessions();
-
-  // 과거 완료 기록이 있으면 로컬에도 완료 표시를 남긴다.
-  if((state.allSessions || []).some(s =>
-      String(s.userEmail || '').trim().toLowerCase() === email)){
-    markTutorialSeen(email);
-  }
 
   state.view='home';
   render();
@@ -849,6 +833,10 @@ function resolveRound(landing, aiAction, round){
 
     if(state.tutorialActive && state.tutorialStep===1){
       state.tutorialStep = 2;
+
+      // 실제로 튜토리얼 3단계까지 도달했으면 이 계정의 튜토리얼을 완료로 기록
+      // 이후 로그아웃/재로그인 시 다시 보여주지 않는다.
+      markTutorialSeen(state.userEmail);
     }
 
     render();
@@ -933,9 +921,6 @@ function nextRound(){
 }
 async function finishAndSave(){
   if(state.saving) return;
-
-  // 본게임을 여기까지 완료했다면 이 계정은 튜토리얼 완료 계정으로 확정
-  markTutorialSeen(state.userEmail);
   state.saving = true;
   state.saveStatus = '결과를 저장하고 확인하는 중입니다…';
   render();
@@ -1091,6 +1076,7 @@ function goto(view){
 
   if(view==='game'){
     const seen = hasSeenTutorial(state.userEmail);
+    console.log('[NeuroRoulette] tutorialSeen:', seen, state.userEmail);
     startGame(!seen);
     return;
   }
@@ -1604,14 +1590,6 @@ document.getElementById('app').addEventListener('keydown', (e)=>{
   }catch(e){}
 
   await loadAllSessions();
-
-  // 이미 해당 이메일로 완료된 게임 기록이 있으면
-  // 로컬 저장 여부와 상관없이 튜토리얼 완료 계정으로 처리
-  if(state.userEmail && (state.allSessions || []).some(s =>
-      String(s.userEmail || '').trim().toLowerCase() === state.userEmail)){
-    markTutorialSeen(state.userEmail);
-  }
-
   render();
 })();
 </script>
