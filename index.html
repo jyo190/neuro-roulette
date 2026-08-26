@@ -257,6 +257,122 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .save-status{margin:18px 0 0;padding:12px 15px;border-radius:8px;text-align:center;font-size:13px}.save-status.ok{color:#5dd08a;border:1px solid rgba(93,208,138,.35);background:rgba(93,208,138,.08)}.save-status.fail{color:var(--red-glow);border:1px solid rgba(230,57,70,.4);background:rgba(230,57,70,.08)}
 
 
+/* ===== Combo / wheel lights / AI mini roulette / rank spotlight ===== */
+.wheel-and-ai{display:flex;align-items:center;justify-content:center;gap:22px;width:100%}
+.wheel-lights{position:absolute;inset:-11px;border-radius:50%;z-index:1;pointer-events:none}
+.wheel-light{
+  position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;
+  background:#3a2a25;border:1px solid #5a4038;
+  transform:translate(-50%,-50%) rotate(var(--angle)) translateY(-177px);
+  opacity:.34;box-shadow:0 0 0 rgba(0,0,0,0)
+}
+/* 전구 자체는 고정. 스핀 중 '켜지는 위치'만 원을 따라 이동한다. */
+.wheel-outer.spinning .wheel-light{animation:wheelLightChase .96s linear infinite;animation-delay:var(--delay)}
+@keyframes wheelLightChase{
+  0%,68%,100%{background:#3a2a25;border-color:#5a4038;opacity:.3;box-shadow:none}
+  6%,22%{background:#fff1a8;border-color:#fff4be;opacity:1;box-shadow:0 0 7px #f5d36b,0 0 16px rgba(245,211,107,.9)}
+  28%,40%{background:#e63946;border-color:#ff6b74;opacity:1;box-shadow:0 0 7px #e63946,0 0 16px rgba(230,57,70,.78)}
+}
+
+.combo-panel{
+  width:100%;display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 14px;border:1px solid var(--line);border-radius:10px;background:#120f0e;
+  font-size:12px;color:var(--muted)
+}
+.combo-panel strong{font-family:var(--font-display);font-size:18px;color:var(--gold)}
+.combo-hint{font-size:11px;color:var(--muted2)}
+.combo-fx{
+  position:fixed;inset:0;z-index:240;pointer-events:none;overflow:hidden;
+  display:flex;align-items:center;justify-content:center
+}
+.combo-fx-word{
+  position:relative;z-index:2;font-family:var(--font-display);font-weight:900;
+  font-size:clamp(48px,9vw,110px);letter-spacing:4px;color:#f5d36b;
+  text-shadow:0 0 15px rgba(245,211,107,.75),0 0 40px rgba(230,57,70,.5);
+  animation:comboWord .8s cubic-bezier(.16,.9,.2,1) forwards
+}
+.combo-spark{
+  position:absolute;left:50%;top:50%;width:8px;height:18px;border-radius:3px;
+  background:var(--spark,#f5d36b);box-shadow:0 0 12px var(--spark,#f5d36b);
+  transform:translate(-50%,-50%) rotate(var(--a)) translateY(0);
+  animation:comboSpark .9s ease-out forwards
+}
+@keyframes comboSpark{
+  0%{opacity:1;transform:translate(-50%,-50%) rotate(var(--a)) translateY(0) scale(1)}
+  100%{opacity:0;transform:translate(-50%,-50%) rotate(var(--a)) translateY(-210px) scale(.25)}
+}
+@keyframes comboWord{0%{opacity:0;transform:scale(.45)}45%{opacity:1;transform:scale(1.14)}100%{opacity:0;transform:scale(.95)}}
+body.combo-shake{animation:comboShake .38s linear}
+@keyframes comboShake{
+  0%,100%{transform:translate(0,0)}20%{transform:translate(-5px,2px)}40%{transform:translate(5px,-2px)}
+  60%{transform:translate(-3px,-1px)}80%{transform:translate(3px,2px)}
+}
+
+.ai-slot{
+  width:94px;flex:0 0 94px;padding:10px 9px 9px;border:1px solid var(--line);
+  border-radius:12px;background:linear-gradient(180deg,#1b1715,#0d0b0a);
+  box-shadow:0 14px 30px rgba(0,0,0,.35);text-align:center
+}
+.ai-slot-title{font-size:9px;letter-spacing:1.5px;color:var(--muted2);font-weight:800;margin-bottom:7px}
+.ai-slot-window{
+  position:relative;height:72px;overflow:hidden;border-radius:9px;border:2px solid #3a3230;
+  background:#090807;box-shadow:inset 0 0 16px rgba(0,0,0,.8),0 0 14px rgba(184,31,42,.12)
+}
+.ai-slot-reel{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  font-size:34px;line-height:72px;opacity:0
+}
+.ai-slot-reel>div{height:72px;flex:0 0 72px;display:flex;align-items:center;justify-content:center}
+.ai-slot.spinning .ai-slot-reel{opacity:1;animation:aiReel .24s linear infinite}
+@keyframes aiReel{from{transform:translateY(-72px)}to{transform:translateY(-648px)}}
+.ai-slot-choice{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-size:38px;transition:opacity .16s ease,transform .2s ease
+}
+.ai-slot.locked .ai-slot-window{border-color:var(--red);box-shadow:0 0 0 1px var(--red),0 0 20px rgba(230,57,70,.28)}
+.ai-slot.locked .ai-slot-choice{transform:scale(1.08)}
+.ai-slot-caption{font-size:10px;color:var(--muted);margin-top:7px;white-space:nowrap}
+
+.rank-spotlight{
+  min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;text-align:center;
+  padding:64px 36px 80px;background:
+    radial-gradient(circle at 50% 42%,rgba(217,164,65,.16),transparent 26%),
+    radial-gradient(circle at 50% 45%,rgba(184,31,42,.13),transparent 48%),var(--bg)
+}
+.rank-spotlight-card{width:min(720px,94vw)}
+.rank-kicker{font-size:12px;letter-spacing:3px;color:var(--gold);font-weight:800;margin-bottom:18px}
+.rank-big{
+  font-family:var(--font-display);font-size:clamp(74px,15vw,150px);font-weight:900;
+  line-height:.95;color:var(--gold);text-shadow:0 0 34px rgba(217,164,65,.28)
+}
+.rank-sentence{font-size:clamp(20px,3vw,30px);font-weight:800;margin-top:18px}
+.rank-reward{
+  margin:18px auto 0;width:min(520px,100%);padding:17px 18px;border-radius:12px;
+  border:1px solid rgba(217,164,65,.38);background:rgba(217,164,65,.08);
+  color:#f1d98d;font-size:17px;font-weight:800
+}
+.rank-meta{margin-top:10px;color:var(--muted);font-size:12px}
+.rank-continue{margin-top:30px}
+.rank-board{width:min(760px,94vw);margin:48px auto 0;text-align:left}
+.rank-board-head{text-align:center;margin-bottom:14px}
+.rank-board-head h3{font-size:23px;margin-bottom:5px}
+.rank-board-head p{font-size:12px;color:var(--muted)}
+.rank-board-list{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:rgba(18,15,14,.9)}
+.rank-board-row{display:grid;grid-template-columns:64px 1fr 100px;gap:12px;align-items:center;padding:13px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.rank-board-row:last-child{border-bottom:none}
+.rank-board-row.current{background:rgba(217,164,65,.10);box-shadow:inset 3px 0 0 var(--gold)}
+.rank-board-pos{font-family:var(--font-display);font-size:19px;font-weight:900;color:var(--gold)}
+.rank-board-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.rank-board-score{text-align:right;font-weight:800}
+
+@media(max-width:720px){
+  .wheel-and-ai{gap:10px}
+  .ai-slot{width:78px;flex-basis:78px}
+  .ai-slot-window{height:62px}
+  .ai-slot-choice{font-size:32px}
+  .ai-slot.spinning .ai-slot-reel{font-size:30px}
+}
+
 /* ===== Guided tutorial / Grinder sparks / Final FX ===== */
 
 /* Guided tutorial overlay */
@@ -276,7 +392,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
   box-shadow:
     0 0 14px rgba(255,255,255,.82),
     0 0 34px rgba(255,255,255,.28);
-  transition:left .35s ease, top .35s ease, width .35s ease, height .35s ease;
+  transition:none; /* 스크롤 시 올가미가 즉시 대상 좌표를 따라가도록 지연 제거 */
   z-index:182;
 }
 .tutorial-focus::before{
@@ -486,6 +602,8 @@ const state = {
   tutorialActive:false,
   tutorialStep:0,
   practiceRound:false,
+  combo:0,
+  bestCombo:0,
 };
 
 /* ---------- Firestore helpers ---------- */
@@ -654,13 +772,14 @@ function exportJSON(){
 }
 function exportCSV(){
   if(!requireDownloadPassword()) return;
-  const rows = [['participant_id','user_email','session_date','human_score','ai_score','winner','round','hot_segment','landing_segment','human_choice','human_matched','human_reward','ai_choice','ai_matched','ai_reward']];
+  const rows = [['participant_id','user_email','session_date','human_score','ai_score','winner','best_hit_streak','round','hot_segment','landing_segment','human_choice','human_matched','human_reward','hit_streak','ai_choice','ai_matched','ai_reward']];
   state.allSessions.forEach(s=>{
     s.rounds.forEach(r=>{
       rows.push([
-        s.participantId, s.userEmail || '', s.date, s.humanScore, s.aiScore, s.winner,
+        s.participantId, s.userEmail || '', s.date, s.humanScore, s.aiScore, s.winner, (s.bestHitStreak ?? s.bestCombo ?? ''),
         r.round, hotSegmentForRound(r.round), r.landing,
         r.humanChoice, r.humanMatched, r.humanReward,
+        r.hitStreak ?? '',
         r.aiChoice, r.aiMatched, r.aiReward
       ]);
     });
@@ -671,6 +790,31 @@ function exportCSV(){
 }
 
 /* ---------- 게임 로직 ---------- */
+function streakLabel(streak){
+  if(streak===2) return 'DOUBLE!';
+  if(streak===3) return 'TRIPLE!';
+  return `${streak} STREAK!`;
+}
+
+function triggerComboFX(streak){
+  document.querySelector('.combo-fx')?.remove();
+  document.body.classList.remove('combo-shake');
+  void document.body.offsetWidth;
+  document.body.classList.add('combo-shake');
+
+  const fx = document.createElement('div');
+  fx.className = 'combo-fx';
+  const colors = ['#f5d36b','#e63946','#ffffff'];
+  const sparks = Array.from({length:30},(_,i)=>{
+    const a = `${i*12}deg`;
+    const c = colors[i%colors.length];
+    return `<i class="combo-spark" style="--a:${a};--spark:${c}"></i>`;
+  }).join('');
+  fx.innerHTML = `${sparks}<div class="combo-fx-word">${streakLabel(streak)}</div>`;
+  document.body.appendChild(fx);
+  setTimeout(()=>{ fx.remove(); document.body.classList.remove('combo-shake'); }, 950);
+}
+
 function resetGame(){
   Q = new Array(N).fill(0);
   epsilon = 0.5;
@@ -693,6 +837,8 @@ function resetGame(){
   state.tutorialActive = false;
   state.tutorialStep = 0;
   state.practiceRound = false;
+  state.combo = 0;
+  state.bestCombo = 0;
 }
 function startGame(withTutorial=false){
   if(!state.authenticated){ state.view='login'; render(); return; }
@@ -709,6 +855,7 @@ function startGame(withTutorial=false){
 function selectSegment(i){
   if(state.spinning || state.roundResult) return;
 
+  // 연속 적중 판정은 선택 시점이 아니라 룰렛 결과가 확정된 뒤 resolveRound()에서 처리한다.
   state.selected = i;
   render();
 
@@ -752,6 +899,21 @@ function spin(){
   }
 
   render();
+
+  // 작은 슬롯형 룰렛도 같이 회전한 뒤 AI가 실제 선택한 아이콘에서 멈춘다.
+  // AI 선택값 자체는 위에서 이미 결정되어 있으므로 학습/보상 로직에는 영향을 주지 않는다.
+  setTimeout(()=>{
+    const slot = document.getElementById('ai-slot');
+    const reel = document.getElementById('ai-slot-reel');
+    const choice = document.getElementById('ai-slot-choice');
+    if(slot && reel && choice){
+      reel.style.animation = 'none';
+      reel.style.opacity = '0';
+      choice.style.opacity = '1';
+      slot.classList.remove('spinning');
+      slot.classList.add('locked');
+    }
+  }, 1050);
 
   // innerHTML 재렌더링 때문에 CSS transition이 시작점을 잃는 문제를
   // Web Animations API로 해결한다.
@@ -865,6 +1027,15 @@ function resolveRound(landing, aiAction, round){
 
   state.humanScore += humanReward;
   state.aiScore += aiReward;
+
+  // 실제 당첨 결과까지 확인한 뒤에만 연속 적중을 계산한다.
+  if(humanMatched){
+    state.combo += 1;
+    state.bestCombo = Math.max(state.bestCombo, state.combo);
+  }else{
+    state.combo = 0;
+  }
+
   state.roundHistory.push({
     round,
     landing,
@@ -873,13 +1044,17 @@ function resolveRound(landing, aiAction, round){
     humanReward,
     aiReward,
     humanMatched,
-    aiMatched
+    aiMatched,
+    hitStreak: state.combo
   });
   state.landingHistory.push(landing);
 
   state.spinning = false;
   state.roundResult = {landing, humanMatched, aiMatched, humanReward, aiReward};
   render();
+  if(humanMatched && state.combo >= 2){
+    setTimeout(()=>triggerComboFX(state.combo), 60);
+  }
 }
 function nextRound(){
   // 연습 라운드 종료 → 본게임 1라운드 시작
@@ -904,6 +1079,8 @@ function nextRound(){
     state.roundHistory = [];
     state.landingHistory = [];
     state.aiLearningLog = [];
+    state.combo = 0;
+    state.bestCombo = 0;
     render();
     return;
   }
@@ -917,6 +1094,7 @@ function nextRound(){
   state.round += 1;
   state.selected = null;
   state.roundResult = null;
+  state.aiActionThisRound = null;
   render();
 }
 async function finishAndSave(){
@@ -938,13 +1116,14 @@ async function finishAndSave(){
     survey: {...state.survey, patternGuess:String(state.survey.patternGuess||'').trim()},
     finalQ: [...Q],
     finalEpsilon: epsilon,
+    bestHitStreak: state.bestCombo,
     aiLearningLog: [...state.aiLearningLog],
   };
   const saved = await appendSession(session);
   state.saving = false;
   if(saved){
     await loadAllSessions();
-    state.view = 'results';
+    state.view = 'rankIntro';
   }else{
     state.view = 'survey';
   }
@@ -1089,6 +1268,15 @@ function goto(view){
 /* ============================================================
    렌더링
    ============================================================ */
+function wheelLightsHTML(){
+  const count = 16;
+  return `<div class="wheel-lights">${Array.from({length:count},(_,i)=>{
+    const angle = i * (360/count);
+    const delay = `${(-i * .06).toFixed(2)}s`;
+    return `<i class="wheel-light" style="--angle:${angle}deg;--delay:${delay}"></i>`;
+  }).join('')}</div>`;
+}
+
 function iconWheelSlices(rotation){
   let bg = 'conic-gradient(from 0deg,';
   const parts = [];
@@ -1256,6 +1444,9 @@ function renderGame(){
   }
 
   const showHint = round >= 3;
+  const comboText = state.combo>=2 ? streakLabel(state.combo) : (state.combo===1 ? '1 HIT' : 'STREAK READY');
+  const aiReelIcons = Array.from({length:4},()=>SEGMENTS.map(s=>`<div>${s.icon}</div>`).join('')).join('');
+  const aiChoiceIcon = state.aiActionThisRound===null ? '❔' : SEGMENTS[state.aiActionThisRound].icon;
 
   return `
   ${tutorialOverlayHTML()}
@@ -1275,12 +1466,29 @@ function renderGame(){
       </div>
 
       <div class="center-col">
-        <div class="wheel-outer ${state.spinning?'spinning':''}" style="width:340px; height:340px;">
-          <div class="wheel-pointer">▼</div>
-          <div class="wheel-ring"></div>
-          ${iconWheelSlices(state.wheelRotation)}
-          <button class="wheel-hub clickable" data-action="spin" ${(state.selected===null||state.spinning||state.roundResult)?'disabled':''}>${state.spinning?'...':'SPIN'}</button>
+        <div class="combo-panel">
+          <div><strong>${comboText}</strong><div class="combo-hint">룰렛 결과를 연속으로 맞히면 DOUBLE → TRIPLE → STREAK 연출이 이어집니다.</div></div>
+          <div style="font-weight:800;color:${state.combo>=2?'var(--gold)':'var(--muted2)'}">최고 ${state.bestCombo}</div>
         </div>
+
+        <div class="wheel-and-ai">
+          <div class="wheel-outer ${state.spinning?'spinning':''}" style="width:340px; height:340px;">
+            <div class="wheel-pointer">▼</div>
+            ${wheelLightsHTML()}
+            <div class="wheel-ring"></div>
+            ${iconWheelSlices(state.wheelRotation)}
+            <button class="wheel-hub clickable" data-action="spin" ${(state.selected===null||state.spinning||state.roundResult)?'disabled':''}>${state.spinning?'...':'SPIN'}</button>
+          </div>
+          <div class="ai-slot ${state.spinning?'spinning':''}" id="ai-slot">
+            <div class="ai-slot-title">AI SELECT</div>
+            <div class="ai-slot-window">
+              <div class="ai-slot-reel" id="ai-slot-reel">${aiReelIcons}</div>
+              <div class="ai-slot-choice" id="ai-slot-choice" style="${state.spinning?'opacity:0':'opacity:1'}">${aiChoiceIcon}</div>
+            </div>
+            <div class="ai-slot-caption">${state.spinning?'선택 중…':(state.aiActionThisRound===null?'SPIN 시 공개':'AI의 선택')}</div>
+          </div>
+        </div>
+
         <div class="bet-grid">${betHTML}</div>
         ${resultHTML}
       </div>
@@ -1326,6 +1534,42 @@ function renderSurvey(){
   </div>`;
 }
 
+function renderRankIntro(){
+  const ranking = [...(state.allSessions||[])].sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
+  const myIndex = ranking.findIndex(s=>s.id===state.lastSavedSessionId);
+  const rank = myIndex>=0 ? myIndex+1 : null;
+  const REWARD_CUTOFF = 2;
+  const remaining = rank===null ? null : Math.max(0, rank - REWARD_CUTOFF);
+  const rewardText = rank===null
+    ? '순위를 계산하지 못했습니다.'
+    : rank<=REWARD_CUTOFF
+      ? `🎁 현재 보상권(TOP ${REWARD_CUTOFF})입니다!`
+      : `🎁 보상까지 ${remaining}위 남음`;
+
+  const top20HTML = ranking.slice(0,20).map((s,i)=>`
+    <div class="rank-board-row ${s.id===state.lastSavedSessionId?'current':''}">
+      <div class="rank-board-pos">${i+1}위</div>
+      <div class="rank-board-name"><b>${escapeHTML(s.participantId)}</b>${s.id===state.lastSavedSessionId?' · 나':''}</div>
+      <div class="rank-board-score">${s.humanScore}점</div>
+    </div>`).join('');
+
+  return `
+  <div class="rank-spotlight">
+    <div class="rank-spotlight-card">
+      <div class="rank-kicker">YOUR CURRENT RANK</div>
+      <div class="rank-big">${rank===null?'—':rank}<span style="font-size:.35em;">위</span></div>
+      <div class="rank-sentence">${rank===null?'현재 순위를 확인할 수 없습니다.':`당신은 현재 ${rank}위입니다.`}</div>
+      <div class="rank-reward">${rewardText}</div>
+      <div class="rank-meta">${rank===null?'':`전체 ${ranking.length}개 완료 세션 기준 · 내 점수 ${state.humanScore}점`}</div>
+      <button class="btn-primary rank-continue" data-action="show-results">상세 결과 보기 →</button>
+    </div>
+    <div class="rank-board">
+      <div class="rank-board-head"><h3>TOP 20</h3><p>아래로 내려 현재 1위부터 20위까지 확인할 수 있습니다.</p></div>
+      <div class="rank-board-list">${top20HTML || '<div class="empty">아직 순위 데이터가 없습니다.</div>'}</div>
+    </div>
+  </div>`;
+}
+
 function renderResults(){
   const max = Math.max(20, Math.abs(state.humanScore), Math.abs(state.aiScore));
   const hH = Math.max(6, Math.abs(state.humanScore)/max*180);
@@ -1334,7 +1578,7 @@ function renderResults(){
   const winnerText = winner==='human' ? '🎉 당신이 AI를 이겼습니다!' : winner==='ai' ? '🤖 이번엔 AI가 더 나은 결정을 내렸습니다.' : '🤝 무승부입니다!';
   const ranking = [...(state.allSessions||[])].sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
   const myIndex = ranking.findIndex(s=>s.id===state.lastSavedSessionId);
-  const resultRankHTML = ranking.slice(0,10).map((s,i)=>`<div class="rank-row ${s.id===state.lastSavedSessionId?'current':''}"><div class="rank-pos">${i+1}</div><div><b>${escapeHTML(s.participantId)}</b></div><div>${s.humanScore}점</div><div>${s.winner==='human'?'인간 승':s.winner==='ai'?'AI 승':'무승부'}</div></div>`).join('');
+  const resultRankHTML = ranking.slice(0,20).map((s,i)=>`<div class="rank-row ${s.id===state.lastSavedSessionId?'current':''}"><div class="rank-pos">${i+1}</div><div><b>${escapeHTML(s.participantId)}</b></div><div>${s.humanScore}점</div><div>${s.winner==='human'?'인간 승':s.winner==='ai'?'AI 승':'무승부'}</div></div>`).join('');
 
   const rowsHTML = state.roundHistory.map(r=>`
     <tr>
@@ -1508,6 +1752,10 @@ function render(){
     app.innerHTML = renderLogin();
     return;
   }
+  if(state.view==='rankIntro'){
+    app.innerHTML = renderRankIntro();
+    return;
+  }
   switch(state.view){
     case 'game': body = renderGame(); break;
     case 'survey': body = renderSurvey(); break;
@@ -1552,6 +1800,7 @@ document.getElementById('app').addEventListener('click', (e)=>{
       render();
       break;
     case 'finish-save': finishAndSave(); break;
+    case 'show-results': state.view='results'; render(); break;
     case 'login': login(); break;
     case 'logout': logout(); break;
     case 'export-json': exportJSON(); break;
@@ -1566,8 +1815,13 @@ document.getElementById('app').addEventListener('input', (e)=>{
 window.addEventListener('resize', ()=>{
   if(state.tutorialActive) updateTutorialOverlay();
 });
+let tutorialScrollRAF = 0;
 window.addEventListener('scroll', ()=>{
-  if(state.tutorialActive) updateTutorialOverlay();
+  if(!state.tutorialActive || tutorialScrollRAF) return;
+  tutorialScrollRAF = requestAnimationFrame(()=>{
+    tutorialScrollRAF = 0;
+    updateTutorialOverlay();
+  });
 }, true);
 
 document.getElementById('app').addEventListener('keydown', (e)=>{
