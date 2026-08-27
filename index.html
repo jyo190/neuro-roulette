@@ -55,9 +55,6 @@ header{
 nav{display:flex; gap:30px;}
 nav a{font-size:14px; color:var(--muted); padding:6px 2px; border-bottom:2px solid transparent; transition:.15s; font-weight:500;}
 nav a.active, nav a:hover{color:var(--text); border-color:var(--red);}
-.participant-chip{display:flex; align-items:center; gap:8px; background:var(--panel); border:1px solid var(--line); padding:8px 14px; border-radius:20px; font-size:12px; color:var(--muted);}
-.participant-chip b{color:var(--gold); font-weight:700; letter-spacing:.5px;}
-
 /* ===== Buttons ===== */
 .btn-primary{
   background:linear-gradient(180deg, var(--red) 0%, var(--red2) 100%);
@@ -151,12 +148,6 @@ nav a.active, nav a:hover{color:var(--text); border-color:var(--red);}
 .score-val.pos{color:#5dd08a;}
 .score-val.neg{color:var(--red-glow);}
 
-.qbar-row{display:flex; align-items:center; gap:8px; margin-bottom:9px; font-size:12px;}
-.qbar-icon{width:20px; text-align:center; font-size:14px;}
-.qbar-track{flex:1; height:8px; background:#241f1d; border-radius:4px; overflow:hidden; position:relative;}
-.qbar-fill{height:100%; background:linear-gradient(90deg,var(--red2),var(--red)); transition:width .5s;}
-.qbar-val{width:36px; text-align:right; color:var(--muted2); font-size:11px;}
-
 .hint-line{font-size:12px; color:var(--muted); padding:8px 0; border-top:1px solid var(--line);}
 .hint-line:first-of-type{border-top:none;}
 .hint-tip{background:rgba(217,164,65,.08); border:1px solid rgba(217,164,65,.3); color:var(--gold); font-size:12px; padding:10px 12px; border-radius:8px; margin-top:14px;}
@@ -237,8 +228,6 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .rank-list{display:flex; flex-direction:column; gap:8px; margin-top:12px;}
 .rank-row{display:grid; grid-template-columns:42px 1fr 80px 76px; gap:10px; align-items:center; padding:11px 12px; border:1px solid var(--line); border-radius:9px; background:#120f0e; font-size:12px;}
 .rank-pos{font-family:var(--font-display); font-weight:900; color:var(--gold); font-size:16px;}
-.ai-log{margin-top:12px; max-height:150px; overflow:auto; border-top:1px solid var(--line);}
-.ai-log-row{padding:8px 0; border-bottom:1px solid var(--line); font-size:11px; color:var(--muted);}
 .save-status{font-size:12px; text-align:center; margin-top:10px; color:var(--muted);}
 .save-status.ok{color:#5dd08a}.save-status.fail{color:var(--red-glow);}
 
@@ -251,7 +240,7 @@ tr:hover td{background:rgba(255,255,255,.02);}
 .about-block p{font-size:14px; color:var(--muted); line-height:1.85;}
 
 
-.id-editor{display:flex;align-items:center;gap:7px}.id-input,.pattern-input{background:#100e0d;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px 10px;font-family:inherit}.id-input{width:135px;font-size:12px}.id-input:focus,.pattern-input:focus{outline:none;border-color:var(--red)}.id-save{padding:7px 10px;border-radius:6px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:11px}.id-save:hover{color:var(--text);border-color:var(--red)}
+.pattern-input{background:#100e0d;border:1px solid var(--line);color:var(--text);border-radius:7px;padding:8px 10px;font-family:inherit}.pattern-input:focus{outline:none;border-color:var(--red)}
 .pattern-box{margin:22px 0;padding:18px;border:1px solid rgba(217,164,65,.3);background:rgba(217,164,65,.06);border-radius:10px}.pattern-box label{display:block;font-size:14px;font-weight:700;margin-bottom:7px}.pattern-box p{font-size:12px;color:var(--muted);margin-bottom:10px}.pattern-input{width:100%;min-height:92px;resize:vertical;font-size:13px}
 .result-ranking{margin-top:24px}.rank-me{border:1px solid rgba(217,164,65,.45);background:rgba(217,164,65,.08);border-radius:10px;padding:14px 16px;margin-bottom:12px;font-weight:700}.rank-list{display:flex;flex-direction:column}.rank-row{display:grid;grid-template-columns:50px 1fr 90px 100px;align-items:center;gap:10px;padding:11px 8px;border-bottom:1px solid var(--line);font-size:12px}.rank-pos{font-family:var(--font-display);font-size:18px;color:var(--gold);font-weight:900}.rank-row.current{background:rgba(184,31,42,.10)}
 .save-status{margin:18px 0 0;padding:12px 15px;border-radius:8px;text-align:center;font-size:13px}.save-status.ok{color:#5dd08a;border:1px solid rgba(93,208,138,.35);background:rgba(93,208,138,.08)}.save-status.fail{color:var(--red-glow);border:1px solid rgba(230,57,70,.4);background:rgba(230,57,70,.08)}
@@ -281,39 +270,6 @@ tr:hover td{background:rgba(255,255,255,.02);}
 }
 .combo-panel strong{font-family:var(--font-display);font-size:18px;color:var(--gold)}
 .combo-hint{font-size:11px;color:var(--muted2)}
-.combo-fx{
-  position:fixed;inset:0;z-index:240;pointer-events:none;overflow:hidden;
-  display:flex;align-items:center;justify-content:center;
-  background:radial-gradient(circle at center,rgba(0,0,0,.18),rgba(0,0,0,.76));
-  animation:comboOverlayFade 1.35s ease forwards
-}
-.combo-fx-inner{position:relative;z-index:2;text-align:center}
-.combo-fx-word{
-  font-family:var(--font-display);font-weight:900;
-  font-size:clamp(72px,13vw,170px);letter-spacing:7px;color:#f5d36b;
-  text-shadow:0 0 15px rgba(245,211,107,.78),0 0 46px rgba(230,57,70,.55);
-  animation:comboWord 1.05s cubic-bezier(.16,.9,.2,1) forwards
-}
-.combo-fx-sub{margin-top:16px;font-size:18px;font-weight:900;letter-spacing:2px;color:#fff;animation:comboSub 1.05s ease forwards}
-.combo-spark{
-  position:absolute;left:50%;top:50%;width:8px;height:18px;border-radius:3px;
-  background:var(--spark,#f5d36b);box-shadow:0 0 12px var(--spark,#f5d36b);
-  transform:translate(-50%,-50%) rotate(var(--a)) translateY(0);
-  animation:comboSpark .9s ease-out forwards
-}
-@keyframes comboSpark{
-  0%{opacity:1;transform:translate(-50%,-50%) rotate(var(--a)) translateY(0) scale(1)}
-  100%{opacity:0;transform:translate(-50%,-50%) rotate(var(--a)) translateY(-210px) scale(.25)}
-}
-@keyframes comboWord{0%{opacity:0;transform:scale(.38)}42%{opacity:1;transform:scale(1.12)}78%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.96)}}
-@keyframes comboSub{0%,18%{opacity:0;transform:translateY(10px)}45%,78%{opacity:1;transform:translateY(0)}100%{opacity:0}}
-@keyframes comboOverlayFade{0%,72%{opacity:1}100%{opacity:0;visibility:hidden}}
-body.combo-shake{animation:comboShake .38s linear}
-@keyframes comboShake{
-  0%,100%{transform:translate(0,0)}20%{transform:translate(-5px,2px)}40%{transform:translate(5px,-2px)}
-  60%{transform:translate(-3px,-1px)}80%{transform:translate(3px,2px)}
-}
-
 .ai-slot{
   width:94px;flex:0 0 94px;padding:10px 9px 9px;border:1px solid var(--line);
   border-radius:12px;background:linear-gradient(180deg,#1b1715,#0d0b0a);
@@ -851,25 +807,6 @@ function streakBonus(streak){
   return streak >= 2 ? (streak - 1) * 20 : 0;
 }
 
-function triggerComboFX(streak, bonus){
-  document.querySelector('.combo-fx')?.remove();
-  document.body.classList.remove('combo-shake');
-  void document.body.offsetWidth;
-  document.body.classList.add('combo-shake');
-
-  const fx = document.createElement('div');
-  fx.className = 'combo-fx';
-  const colors = ['#f5d36b','#e63946','#ffffff'];
-  const sparks = Array.from({length:30},(_,i)=>{
-    const a = `${i*12}deg`;
-    const c = colors[i%colors.length];
-    return `<i class="combo-spark" style="--a:${a};--spark:${c}"></i>`;
-  }).join('');
-  fx.innerHTML = `${sparks}<div class="combo-fx-inner"><div class="combo-fx-word">${streakLabel(streak)}</div><div class="combo-fx-sub">BONUS +${bonus}점</div></div>`;
-  document.body.appendChild(fx);
-  setTimeout(()=>{ fx.remove(); document.body.classList.remove('combo-shake'); }, 1400);
-}
-
 function resetGame(){
   Q = new Array(N).fill(0);
   epsilon = 0.5;
@@ -894,6 +831,7 @@ function resetGame(){
   state.practiceRound = false;
   state.combo = 0;
   state.bestCombo = 0;
+  state.roundFx = null;
 }
 function startGame(withTutorial=false){
   if(!state.authenticated){ state.view='login'; render(); return; }
@@ -1187,6 +1125,7 @@ function nextRound(){
     state.aiLearningLog = [];
     state.combo = 0;
     state.bestCombo = 0;
+    state.roundFx = null;
     render();
     return;
   }
@@ -1201,6 +1140,7 @@ function nextRound(){
   state.selected = null;
   state.roundResult = null;
   state.aiActionThisRound = null;
+  state.roundFx = null;
   render();
 }
 async function finishAndSave(){
@@ -1545,6 +1485,7 @@ function renderGame(){
 
   return `
   ${tutorialOverlayHTML()}
+  ${roundFxHTML()}
   <div class="wrap page">
     <div class="progress-dots">${dots}</div>
     <div class="game-grid">
