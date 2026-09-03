@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
@@ -506,7 +506,7 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/fireba
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
 import {
   getFirestore, collection, doc, setDoc, getDocs,
-  query, orderBy, serverTimestamp
+  query, orderBy, serverTimestamp, limit, where, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
 const firebaseConfig = {
@@ -599,6 +599,10 @@ const state = {
   survey:{difficulty:null, confidence:null, enjoy:null, patternGuess:''},
   allSessions:[],
   loadingSessions:false,
+  allSessionsLoaded:false,
+  sessionsLoadedAt:0,
+  rankingSessions:[],
+  currentRank:null,
   saveStatus:'',
   aiLearningLog:[],
   lastSavedSessionId:null,
@@ -719,21 +723,71 @@ function logout(){
   render();
 }
 
-async function loadAllSessions(){
+const SESSION_CACHE_MS = 5 * 60 * 1000;
+let allSessionsPromise = null;
+
+async function loadAllSessions({force=false}={}){
+  // 전체 원자료는 "데이터 & 결과" 페이지에서만 읽는다.
+  // 홈/게임 렌더링마다 전체 컬렉션을 다시 읽지 않도록 메모리 캐시 + 중복 요청 방지를 사용한다.
+  const fresh = state.allSessionsLoaded && (Date.now() - state.sessionsLoadedAt < SESSION_CACHE_MS);
+  if(!force && fresh) return state.allSessions;
+  if(allSessionsPromise) return allSessionsPromise;
+
   state.loadingSessions = true;
+  allSessionsPromise = (async()=>{
+    try{
+      const sessionsQuery = query(
+        collection(db, SESSION_COLLECTION),
+        orderBy('createdAt', 'desc')
+      );
+      const snapshot = await getDocs(sessionsQuery);
+      state.allSessions = snapshot.docs.map(normalizeFirestoreSession);
+      state.allSessionsLoaded = true;
+      state.sessionsLoadedAt = Date.now();
+      return state.allSessions;
+    }catch(e){
+      console.error('Firestore 데이터 불러오기 실패', e);
+      // 기존에 읽어 둔 데이터가 있다면 화면에서 지우지 않는다.
+      if(!state.allSessionsLoaded) state.allSessions = [];
+      state.saveStatus = '전체 기록을 불러오지 못했습니다. Firestore 일일 읽기 한도, 규칙, 인터넷 연결을 확인하세요.';
+      return state.allSessions;
+    }finally{
+      state.loadingSessions = false;
+      allSessionsPromise = null;
+    }
+  })();
+
+  return allSessionsPromise;
+}
+
+async function loadRankingForScore(score){
+  // 순위 화면 때문에 전체 gameResults를 읽지 않는다.
+  // TOP 20은 최대 20개 문서만 읽고, 현재 등수는 count 집계로 계산한다.
   try{
-    const sessionsQuery = query(
+    const topQuery = query(
       collection(db, SESSION_COLLECTION),
-      orderBy('createdAt', 'desc')
+      orderBy('humanScore', 'desc'),
+      limit(20)
     );
-    const snapshot = await getDocs(sessionsQuery);
-    state.allSessions = snapshot.docs.map(normalizeFirestoreSession);
+    const higherScoreQuery = query(
+      collection(db, SESSION_COLLECTION),
+      where('humanScore', '>', Number(score) || 0)
+    );
+
+    const [topSnapshot, countSnapshot] = await Promise.all([
+      getDocs(topQuery),
+      getCountFromServer(higherScoreQuery)
+    ]);
+
+    state.rankingSessions = topSnapshot.docs
+      .map(normalizeFirestoreSession)
+      .sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
+    // 같은 점수는 공동 순위처럼 취급한다.
+    state.currentRank = Number(countSnapshot.data().count || 0) + 1;
   }catch(e){
-    console.error('Firestore 데이터 불러오기 실패', e);
-    state.allSessions = [];
-    state.saveStatus = '전체 기록을 불러오지 못했습니다. Firestore 규칙과 인터넷 연결을 확인하세요.';
-  }finally{
-    state.loadingSessions = false;
+    console.error('Firestore 순위 불러오기 실패', e);
+    state.rankingSessions = [];
+    state.currentRank = null;
   }
 }
 
@@ -832,6 +886,8 @@ function resetGame(){
   state.combo = 0;
   state.bestCombo = 0;
   state.roundFx = null;
+  state.rankingSessions = [];
+  state.currentRank = null;
 }
 function startGame(withTutorial=false){
   if(!state.authenticated){ state.view='login'; render(); return; }
@@ -1168,7 +1224,8 @@ async function finishAndSave(){
   const saved = await appendSession(session);
   state.saving = false;
   if(saved){
-    await loadAllSessions();
+    // 저장 후 전체 데이터셋을 다시 읽는 대신 TOP 20 + 현재 등수만 읽는다.
+    await loadRankingForScore(session.humanScore);
     state.view = 'rankIntro';
   }else{
     state.view = 'survey';
@@ -1307,7 +1364,10 @@ function goto(view){
   }
 
   state.view = view;
-  if(view==='data') loadAllSessions().then(render);
+  if(view==='data'){
+    // 전체 원자료는 사용자가 실제로 데이터 페이지를 열었을 때만 1회 읽는다.
+    loadAllSessions().then(render);
+  }
   render();
 }
 
@@ -1567,9 +1627,8 @@ function renderSurvey(){
 }
 
 function renderRankIntro(){
-  const ranking = [...(state.allSessions||[])].sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
-  const myIndex = ranking.findIndex(s=>s.id===state.lastSavedSessionId);
-  const rank = myIndex>=0 ? myIndex+1 : null;
+  const ranking = [...(state.rankingSessions||[])].sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
+  const rank = state.currentRank;
   const REWARD_CUTOFF = 2;
   const remaining = rank===null ? null : Math.max(0, rank - REWARD_CUTOFF);
   const rewardText = rank===null
@@ -1608,7 +1667,7 @@ function renderResults(){
   const aH = Math.max(6, Math.abs(state.aiScore)/max*180);
   const winner = state.humanScore > state.aiScore ? 'human' : (state.aiScore > state.humanScore ? 'ai' : 'tie');
   const winnerText = winner==='human' ? '🎉 당신이 AI를 이겼습니다!' : winner==='ai' ? '🤖 이번엔 AI가 더 나은 결정을 내렸습니다.' : '🤝 무승부입니다!';
-  const ranking = [...(state.allSessions||[])].sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
+  const ranking = [...(state.rankingSessions||[])].sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
   const myIndex = ranking.findIndex(s=>s.id===state.lastSavedSessionId);
   const resultRankHTML = ranking.slice(0,20).map((s,i)=>`<div class="rank-row ${s.id===state.lastSavedSessionId?'current':''}"><div class="rank-pos">${i+1}</div><div><b>${escapeHTML(s.participantId)}</b></div><div>${s.humanScore}점</div><div>${s.winner==='human'?'인간 승':s.winner==='ai'?'AI 승':'무승부'}</div></div>`).join('');
 
@@ -1658,7 +1717,7 @@ function renderResults(){
     </div>
     <div class="panel result-ranking">
       <h3>게임 종료 순위</h3>
-      <div class="rank-me">${myIndex>=0 ? `현재 기록은 전체 ${ranking.length}개 세션 중 <span style="color:var(--gold)">${myIndex+1}위</span>입니다.` : '현재 순위를 계산하지 못했습니다.'}</div>
+      <div class="rank-me">${state.currentRank!==null ? `현재 기록은 <span style="color:var(--gold)">${state.currentRank}위</span>입니다. (TOP 20만 화면에 표시)` : '현재 순위를 계산하지 못했습니다.'}</div>
       ${resultRankHTML ? `<div class="rank-list">${resultRankHTML}</div>` : `<div class="empty">저장된 순위가 없습니다.</div>`}
     </div>
     <div class="save-status ${state.saveStatus.includes('실패')?'fail':'ok'}">${state.saveStatus}</div>
@@ -1800,19 +1859,26 @@ function render(){
   app.innerHTML = headerHTML() + body;
   if(state.view==='home') updateHomeStats();
 }
-async function updateHomeStats(){
-  try{
-    await loadAllSessions();
-    const list = state.allSessions;
-    const participants = new Set(list.map(s=>s.participantId)).size;
-    const rounds = list.reduce((a,s)=>a+(Array.isArray(s.rounds)?s.rounds.length:0),0);
-    const pEl = document.getElementById('home-participants');
-    const sEl = document.getElementById('home-sessions');
-    const rEl = document.getElementById('home-rounds');
-    if(pEl) pEl.textContent = participants.toLocaleString();
-    if(sEl) sEl.textContent = list.length.toLocaleString();
-    if(rEl) rEl.textContent = rounds.toLocaleString();
-  }catch(e){}
+function updateHomeStats(){
+  // 홈 화면은 Firestore를 읽지 않는다.
+  // 사용자가 데이터 페이지에서 이미 전체 기록을 불러온 경우에만 캐시된 값으로 통계를 표시한다.
+  const pEl = document.getElementById('home-participants');
+  const sEl = document.getElementById('home-sessions');
+  const rEl = document.getElementById('home-rounds');
+
+  if(!state.allSessionsLoaded){
+    if(pEl) pEl.textContent = '—';
+    if(sEl) sEl.textContent = '—';
+    if(rEl) rEl.textContent = '—';
+    return;
+  }
+
+  const list = state.allSessions;
+  const participants = new Set(list.map(s=>s.participantId)).size;
+  const rounds = list.reduce((a,s)=>a+(Array.isArray(s.rounds)?s.rounds.length:0),0);
+  if(pEl) pEl.textContent = participants.toLocaleString();
+  if(sEl) sEl.textContent = list.length.toLocaleString();
+  if(rEl) rEl.textContent = rounds.toLocaleString();
 }
 
 /* ---------- 이벤트 위임 ---------- */
@@ -1875,7 +1941,8 @@ document.getElementById('app').addEventListener('keydown', (e)=>{
     }
   }catch(e){}
 
-  await loadAllSessions();
+  // 초기 접속에서는 Firestore 전체 컬렉션을 읽지 않는다.
+  // 데이터 페이지/게임 종료 순위처럼 실제로 필요한 시점에만 필요한 범위만 조회한다.
   render();
 })();
 </script>
