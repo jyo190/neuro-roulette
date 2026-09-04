@@ -505,7 +505,7 @@ body.tutorial-active .tutorial-target{
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js";
 import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-analytics.js";
 import {
-  getFirestore, collection, doc, setDoc, getDocs,
+  getFirestore, collection, doc, setDoc, getDocs, getDoc,
   query, orderBy, serverTimestamp, limit, where, getCountFromServer
 } from "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js";
 
@@ -528,12 +528,14 @@ isSupported().then(ok => {
 }).catch(err => console.warn("Analytics 초기화 생략", err));
 
 const SESSION_COLLECTION = "gameResults";
+const PARTICIPANT_COLLECTION = "participants";
+const META_COLLECTION = "meta";
 
 /* ============================================================
    NeuroRoulette — 연구용 룰렛 · Q-learning 비교 데모
-   로그인 없이 익명 참가자 ID로 동작하며, 모든 실험 데이터는
-   Firebase Firestore에 누적되어 연구자가 전체 데이터를
-   "데이터 & 결과" 페이지에서 확인 · 다운로드할 수 있습니다.
+   학교 이메일 형식 확인 후 익명 참가자 ID로 동작하며, 모든 실험 데이터는
+   Firebase Firestore에 누적됩니다. 공개 화면에는 통계와 TOP 20을 표시하고,
+   전체 원자료/다운로드는 관리자 암호 확인 후 사용할 수 있습니다.
    ============================================================ */
 
 /* ---------- 세그먼트 정의 ---------- */
@@ -553,6 +555,9 @@ const MAX_ROUNDS = 7;
 /* 라운드마다 "핫 세그먼트"가 이동하는 규칙 (패턴) */
 const HOT_PATTERN = [0,2,4,6,1,3,5];
 const HOT_PROB = 0.40;
+SEGMENTS.forEach(Object.freeze);
+Object.freeze(SEGMENTS);
+Object.freeze(HOT_PATTERN);
 
 function hotSegmentForRound(round){ return HOT_PATTERN[(round-1) % HOT_PATTERN.length]; }
 function probsForRound(round){
@@ -603,6 +608,8 @@ const state = {
   sessionsLoadedAt:0,
   rankingSessions:[],
   currentRank:null,
+  publicSummary:{loaded:false, loading:false, totalSessions:0, totalParticipants:0, humanWins:0, aiWins:0, ties:0, ranking:[]},
+  adminUnlocked:false,
   saveStatus:'',
   aiLearningLog:[],
   lastSavedSessionId:null,
@@ -616,8 +623,12 @@ const state = {
 };
 
 /* ---------- Firestore helpers ---------- */
-const DOWNLOAD_PASSWORD = 'NEURO2026'; // 주의: 프런트엔드 암호는 완전한 보안 수단이 아닙니다.
+const ADMIN_PASSWORD_SHA256 = '5e6a0724cc88e7e96f2a9b651e0cdfdeebe0b995e937ac073ffee75ad2f1381a';
+// ↑ 현재 암호 NEURO2026의 SHA-256. 평문 노출은 막지만, 프런트엔드만으로 완전한 비밀 보관은 불가능합니다.
 const SCHOOL_DOMAIN = 'hanmin.hs.kr';
+const OFFICIAL_REWARDS = Object.freeze([10,50,15,25,-30,20,15,30]);
+const CLIENT_RULES_VERSION = 3;
+const PARTICIPANT_INDEX_VERSION = 1;
 
 function normalizeFirestoreSession(documentSnapshot){
   const data = documentSnapshot.data();
@@ -694,7 +705,38 @@ function maskEmail(email){
 
   return `${maskedName}@${domain}`;
 }
-function login(){
+const PARTICIPANT_COUNT_CACHE_MS = 5 * 60 * 1000;
+const participantCountCache = {value:null, loadedAt:0, loading:null};
+
+async function getExactParticipantCount({force=false}={}){
+  // Firestore에는 DISTINCT count가 없으므로, participants 컬렉션 권한에 의존하지 않고
+  // gameResults의 학교 이메일(과거 이메일 누락 기록은 익명 참가자 ID)을 기준으로 고유 인원을 계산한다.
+  if(state.allSessionsLoaded) return countUniqueParticipantsFromSessions(state.allSessions);
+
+  const fresh = participantCountCache.loadedAt && (Date.now()-participantCountCache.loadedAt < PARTICIPANT_COUNT_CACHE_MS);
+  if(!force && fresh && participantCountCache.value !== null) return participantCountCache.value;
+  if(participantCountCache.loading) return participantCountCache.loading;
+
+  participantCountCache.loading = (async()=>{
+    try{
+      const snap = await getDocs(collection(db, SESSION_COLLECTION));
+      const sessions = snap.docs.map(normalizeFirestoreSession);
+      const value = countUniqueParticipantsFromSessions(sessions);
+      participantCountCache.value = value;
+      participantCountCache.loadedAt = Date.now();
+      return value;
+    }catch(e){
+      console.error('참가자 수 집계 실패', e);
+      return participantCountCache.value;
+    }finally{
+      participantCountCache.loading = null;
+    }
+  })();
+
+  return participantCountCache.loading;
+}
+
+async function login(){
   const input=document.getElementById('school-email');
   const email=validSchoolEmail(input ? input.value : '');
   if(!email){
@@ -716,7 +758,11 @@ function logout(){
   state.authenticated=false;
   state.userEmail='';
   state.loginError='';
-  try{ sessionStorage.removeItem('nr_school_email'); }catch(e){}
+  state.adminUnlocked=false;
+  try{
+    sessionStorage.removeItem('nr_school_email');
+    sessionStorage.removeItem('nr_admin_unlocked_v1');
+  }catch(e){}
   resetGame();
   state.view='home';
   ensureParticipant();
@@ -760,34 +806,107 @@ async function loadAllSessions({force=false}={}){
   return allSessionsPromise;
 }
 
-async function loadRankingForScore(score){
-  // 순위 화면 때문에 전체 gameResults를 읽지 않는다.
-  // TOP 20은 최대 20개 문서만 읽고, 현재 등수는 count 집계로 계산한다.
+async function loadRankingForScore(score, currentSession=null){
+  // 전체 gameResults를 읽지 않고 TOP 후보 + 현재 등수만 계산한다.
+  // 동점이면 먼저 저장된 기록(createdAt/date)이 앞선다.
   try{
+    const numericScore = Number(score) || 0;
     const topQuery = query(
       collection(db, SESSION_COLLECTION),
       orderBy('humanScore', 'desc'),
-      limit(20)
+      limit(100)
     );
     const higherScoreQuery = query(
       collection(db, SESSION_COLLECTION),
-      where('humanScore', '>', Number(score) || 0)
+      where('humanScore', '>', numericScore)
+    );
+    const sameScoreQuery = query(
+      collection(db, SESSION_COLLECTION),
+      where('humanScore', '==', numericScore)
     );
 
-    const [topSnapshot, countSnapshot] = await Promise.all([
+    const [topSnapshot, higherCountSnapshot, sameScoreSnapshot] = await Promise.all([
       getDocs(topQuery),
-      getCountFromServer(higherScoreQuery)
+      getCountFromServer(higherScoreQuery),
+      getDocs(sameScoreQuery)
     ]);
+
+    const sortRank = (a,b)=>{
+      const scoreDiff = Number(b.humanScore||0) - Number(a.humanScore||0);
+      if(scoreDiff) return scoreDiff;
+      const ta = new Date(a.date||0).getTime();
+      const tb = new Date(b.date||0).getTime();
+      if(ta !== tb) return ta - tb;
+      return String(a.id||'').localeCompare(String(b.id||''));
+    };
 
     state.rankingSessions = topSnapshot.docs
       .map(normalizeFirestoreSession)
-      .sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
-    // 같은 점수는 공동 순위처럼 취급한다.
-    state.currentRank = Number(countSnapshot.data().count || 0) + 1;
+      .sort(sortRank)
+      .slice(0,20);
+
+    const higher = Number(higherCountSnapshot.data().count || 0);
+    const same = sameScoreSnapshot.docs.map(normalizeFirestoreSession).sort(sortRank);
+
+    if(currentSession){
+      // 방금 저장된 문서 자체를 동점 목록에서 찾아 실제 Firestore 저장 시각 기준 순서를 사용한다.
+      const currentIndex = same.findIndex(s=>s.id === currentSession.id);
+      state.currentRank = higher + (currentIndex >= 0 ? currentIndex : 0) + 1;
+    }else{
+      state.currentRank = higher + 1;
+    }
   }catch(e){
     console.error('Firestore 순위 불러오기 실패', e);
     state.rankingSessions = [];
     state.currentRank = null;
+  }
+}
+
+async function loadPublicSummary({force=false}={}){
+  if(state.publicSummary.loading) return;
+  if(state.publicSummary.loaded && !force) return;
+
+  state.publicSummary.loading = true;
+  try{
+    const base = collection(db, SESSION_COLLECTION);
+    const topQuery = query(base, orderBy('humanScore','desc'), limit(100));
+    const humanWinQuery = query(base, where('winner','==','human'));
+    const aiWinQuery = query(base, where('winner','==','ai'));
+    const tieQuery = query(base, where('winner','==','tie'));
+
+    // 참가자 집계 권한이 없어도 나머지 공개 통계와 TOP 20은 정상 동작하도록 분리한다.
+    const [totalSnap, humanSnap, aiSnap, tieSnap, topSnap] = await Promise.all([
+      getCountFromServer(base),
+      getCountFromServer(humanWinQuery),
+      getCountFromServer(aiWinQuery),
+      getCountFromServer(tieQuery),
+      getDocs(topQuery)
+    ]);
+
+    const participantCount = await getExactParticipantCount();
+
+    const ranking = topSnap.docs.map(normalizeFirestoreSession).sort((a,b)=>{
+      const scoreDiff = Number(b.humanScore||0) - Number(a.humanScore||0);
+      if(scoreDiff) return scoreDiff;
+      const ta = new Date(a.date||0).getTime();
+      const tb = new Date(b.date||0).getTime();
+      if(ta !== tb) return ta - tb;
+      return String(a.id||'').localeCompare(String(b.id||''));
+    }).slice(0,20);
+
+    state.publicSummary = {
+      loaded:true,
+      loading:false,
+      totalSessions:Number(totalSnap.data().count||0),
+      totalParticipants:participantCount,
+      humanWins:Number(humanSnap.data().count||0),
+      aiWins:Number(aiSnap.data().count||0),
+      ties:Number(tieSnap.data().count||0),
+      ranking
+    };
+  }catch(e){
+    console.error('공개 통계 불러오기 실패', e);
+    state.publicSummary.loading = false;
   }
 }
 
@@ -809,11 +928,54 @@ async function appendSession(session){
   }
 }
 
-function requireDownloadPassword(){
-  const entered = prompt('전체 데이터셋 다운로드 암호를 입력하세요.');
+async function sha256Hex(text){
+  const bytes = new TextEncoder().encode(String(text));
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function requireAdminPassword(message='관리자 암호를 입력하세요.'){
+  if(state.adminUnlocked) return true;
+  const entered = prompt(message);
   if(entered === null) return false;
-  if(entered !== DOWNLOAD_PASSWORD){ alert('암호가 올바르지 않습니다.'); return false; }
-  return true;
+  try{
+    const hash = await sha256Hex(entered);
+    if(hash !== ADMIN_PASSWORD_SHA256){
+      alert('암호가 올바르지 않습니다.');
+      return false;
+    }
+    state.adminUnlocked = true;
+    try{ sessionStorage.setItem('nr_admin_unlocked_v1','1'); }catch(e){}
+    return true;
+  }catch(e){
+    console.error('암호 확인 실패', e);
+    alert('이 브라우저에서 암호 확인을 사용할 수 없습니다.');
+    return false;
+  }
+}
+
+async function requireDownloadPassword(){
+  return requireAdminPassword('전체 데이터셋 다운로드 암호를 입력하세요.');
+}
+
+function sessionIdentityKey(session){
+  const email = validSchoolEmail(session?.userEmail || '');
+  if(email) return `email:${email}`;
+  const pid = String(session?.participantId || '').trim();
+  return pid ? `legacy:${pid}` : '';
+}
+
+function countUniqueParticipantsFromSessions(sessions){
+  return new Set((sessions||[]).map(sessionIdentityKey).filter(Boolean)).size;
+}
+
+async function unlockRawData(){
+  if(!(await requireAdminPassword('전체 세션 원자료 열람 암호를 입력하세요.'))) return;
+  await loadAllSessions();
+  participantCountCache.value = countUniqueParticipantsFromSessions(state.allSessions);
+  participantCountCache.loadedAt = Date.now();
+  await fetchHomeStats(true);
+  render();
 }
 
 /* ---------- 데이터 내보내기 ---------- */
@@ -824,28 +986,96 @@ function downloadBlob(blob, filename){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 1000);
 }
-function exportJSON(){
-  if(!requireDownloadPassword()) return;
+async function exportJSON(){
+  if(!(await requireDownloadPassword())) return;
+  await loadAllSessions();
   const blob = new Blob([JSON.stringify(state.allSessions, null, 2)], {type:'application/json'});
   downloadBlob(blob, 'neuroroulette_dataset.json');
 }
-function exportCSV(){
-  if(!requireDownloadPassword()) return;
+
+function csvCell(value){
+  const s = String(value ?? '');
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+}
+
+async function exportCSV(){
+  if(!(await requireDownloadPassword())) return;
+  await loadAllSessions();
   const rows = [['participant_id','user_email','session_date','human_score','ai_score','winner','best_hit_streak','round','hot_segment','landing_segment','human_choice','human_matched','human_base_reward','combo_bonus','human_reward','hit_streak','ai_choice','ai_matched','ai_reward']];
   state.allSessions.forEach(s=>{
-    s.rounds.forEach(r=>{
+    (Array.isArray(s.rounds)?s.rounds:[]).forEach(r=>{
       rows.push([
         s.participantId, s.userEmail || '', s.date, s.humanScore, s.aiScore, s.winner, (s.bestHitStreak ?? s.bestCombo ?? ''),
         r.round, hotSegmentForRound(r.round), r.landing,
-        r.humanChoice, r.humanMatched, r.humanReward,
+        r.humanChoice, r.humanMatched,
+        r.humanBaseReward ?? '', r.comboBonus ?? '', r.humanReward,
         r.hitStreak ?? '',
         r.aiChoice, r.aiMatched, r.aiReward
       ]);
     });
   });
-  const csv = rows.map(row=>row.join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
+  const csv = '\ufeff' + rows.map(row=>row.map(csvCell).join(',')).join('\r\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
   downloadBlob(blob, 'neuroroulette_dataset.csv');
+}
+
+/* ---------- 저장 전 공식 점수 재계산 ---------- */
+function officialRewardFor(matched, idx){
+  return matched ? OFFICIAL_REWARDS[idx] : -5;
+}
+
+function verifyAndRecalculateRounds(rounds){
+  if(!Array.isArray(rounds) || rounds.length !== MAX_ROUNDS){
+    return {ok:false, reason:`완료 라운드가 ${MAX_ROUNDS}개가 아닙니다.`};
+  }
+
+  let humanScore = 0;
+  let aiScore = 0;
+  let streak = 0;
+  let bestStreak = 0;
+  const normalized = [];
+
+  for(let i=0;i<MAX_ROUNDS;i++){
+    const r = rounds[i] || {};
+    const expectedRound = i + 1;
+    const landing = Number(r.landing);
+    const humanChoice = Number(r.humanChoice);
+    const aiChoice = Number(r.aiChoice);
+
+    if(Number(r.round) !== expectedRound) return {ok:false, reason:`${expectedRound}라운드 번호가 올바르지 않습니다.`};
+    if(!Number.isInteger(landing) || landing<0 || landing>=N) return {ok:false, reason:`${expectedRound}라운드 당첨값이 올바르지 않습니다.`};
+    if(!Number.isInteger(humanChoice) || humanChoice<0 || humanChoice>=N) return {ok:false, reason:`${expectedRound}라운드 사용자 선택값이 올바르지 않습니다.`};
+    if(!Number.isInteger(aiChoice) || aiChoice<0 || aiChoice>=N) return {ok:false, reason:`${expectedRound}라운드 AI 선택값이 올바르지 않습니다.`};
+
+    const humanMatched = humanChoice === landing;
+    const aiMatched = aiChoice === landing;
+    streak = humanMatched ? streak + 1 : 0;
+    bestStreak = Math.max(bestStreak, streak);
+
+    const humanBaseReward = officialRewardFor(humanMatched, landing);
+    const comboBonus = humanMatched ? streakBonus(streak) : 0;
+    const humanReward = humanBaseReward + comboBonus;
+    const aiReward = officialRewardFor(aiMatched, landing);
+
+    humanScore += humanReward;
+    aiScore += aiReward;
+
+    normalized.push({
+      round:expectedRound,
+      landing,
+      humanChoice,
+      aiChoice,
+      humanBaseReward,
+      comboBonus,
+      humanReward,
+      aiReward,
+      humanMatched,
+      aiMatched,
+      hitStreak:streak
+    });
+  }
+
+  return {ok:true, rounds:normalized, humanScore, aiScore, bestStreak};
 }
 
 /* ---------- 게임 로직 ---------- */
@@ -1201,31 +1431,54 @@ function nextRound(){
 }
 async function finishAndSave(){
   if(state.saving) return;
+
+  // 7라운드 전체와 각 라운드의 선택/당첨/보상을 공식 규칙으로 다시 계산한다.
+  // state.humanScore에 표시된 숫자는 저장 기준으로 신뢰하지 않는다.
+  const checked = verifyAndRecalculateRounds(state.roundHistory);
+  if(!checked.ok){
+    state.saveStatus = `저장 차단: ${checked.reason}`;
+    state.saving = false;
+    render();
+    return;
+  }
+
+  // 화면 상태도 재계산 결과로 되돌려 단순 점수 변조가 남지 않도록 한다.
+  state.roundHistory = checked.rounds;
+  state.humanScore = checked.humanScore;
+  state.aiScore = checked.aiScore;
+  state.bestCombo = checked.bestStreak;
+
   state.saving = true;
-  state.saveStatus = '결과를 저장하고 확인하는 중입니다…';
+  state.saveStatus = '결과를 검증하고 저장하는 중입니다…';
   render();
-  const winner = state.humanScore > state.aiScore ? 'human' : (state.aiScore > state.humanScore ? 'ai' : 'tie');
+
+  const winner = checked.humanScore > checked.aiScore ? 'human' : (checked.aiScore > checked.humanScore ? 'ai' : 'tie');
   const session = {
     id: Date.now() + '-' + Math.random().toString(36).slice(2,8),
     participantId: state.participantId,
     userEmail: state.userEmail,
     schoolDomain: SCHOOL_DOMAIN,
     date: new Date().toISOString(),
-    humanScore: state.humanScore,
-    aiScore: state.aiScore,
+    humanScore: checked.humanScore,
+    aiScore: checked.aiScore,
     winner,
-    rounds: state.roundHistory,
+    rounds: checked.rounds,
     survey: {...state.survey, patternGuess:String(state.survey.patternGuess||'').trim()},
     finalQ: [...Q],
     finalEpsilon: epsilon,
-    bestHitStreak: state.bestCombo,
+    bestHitStreak: checked.bestStreak,
     aiLearningLog: [...state.aiLearningLog],
+    rulesVersion: CLIENT_RULES_VERSION,
   };
+
   const saved = await appendSession(session);
   state.saving = false;
   if(saved){
-    // 저장 후 전체 데이터셋을 다시 읽는 대신 TOP 20 + 현재 등수만 읽는다.
-    await loadRankingForScore(session.humanScore);
+    // 새 기록이 생겼으므로 참가자/홈 통계 캐시를 즉시 무효화한다.
+    participantCountCache.loadedAt = 0;
+    homeStatsCache.loadedAt = 0;
+    state.publicSummary.loaded = false;
+    await loadRankingForScore(session.humanScore, session);
     state.view = 'rankIntro';
   }else{
     state.view = 'survey';
@@ -1365,8 +1618,9 @@ function goto(view){
 
   state.view = view;
   if(view==='data'){
-    // 전체 원자료는 사용자가 실제로 데이터 페이지를 열었을 때만 1회 읽는다.
-    loadAllSessions().then(render);
+    // 공개 화면에서는 전체 원자료를 읽지 않는다.
+    // 통계 + TOP20만 집계 쿼리로 불러오고, 원자료는 관리자 암호 확인 후에만 읽는다.
+    loadPublicSummary().then(render);
   }
   render();
 }
@@ -1651,7 +1905,7 @@ function renderRankIntro(){
       <div class="rank-big">${rank===null?'—':rank}<span style="font-size:.35em;">위</span></div>
       <div class="rank-sentence">${rank===null?'현재 순위를 확인할 수 없습니다.':`당신은 현재 ${rank}위입니다.`}</div>
       <div class="rank-reward">${rewardText}</div>
-      <div class="rank-meta">${rank===null?'':`전체 ${ranking.length}개 완료 세션 기준 · 내 점수 ${state.humanScore}점`}</div>
+      <div class="rank-meta">${rank===null?'':`전체 완료 세션 중 현재 ${rank}위 · 내 점수 ${state.humanScore}점`}</div>
       <button class="btn-primary rank-continue" data-action="show-results">상세 결과 보기 →</button>
     </div>
     <div class="rank-board">
@@ -1729,22 +1983,45 @@ function renderResults(){
 }
 
 function renderData(){
-  const sessions = state.allSessions || [];
-  if(state.loadingSessions){
-    return `<div class="wrap page"><div class="page-head"><h2>데이터 & 결과</h2></div><div class="empty">전체 실험 데이터를 불러오는 중…</div></div>`;
+  const rawUnlocked = state.adminUnlocked && state.allSessionsLoaded;
+  const sessions = rawUnlocked ? (state.allSessions || []) : [];
+  const summary = state.publicSummary || {};
+  const publicLoading = !!summary.loading && !summary.loaded;
+
+  if(publicLoading){
+    return `<div class="wrap page"><div class="page-head"><h2>데이터 & 결과</h2></div><div class="empty">통계와 순위를 불러오는 중…</div></div>`;
   }
-  const totalSessions = sessions.length;
-  const participants = new Set(sessions.map(s=>s.participantId)).size;
-  const totalRounds = sessions.reduce((a,s)=>a+s.rounds.length,0);
-  const humanWins = sessions.filter(s=>s.winner==='human').length;
-  const aiWins = sessions.filter(s=>s.winner==='ai').length;
-  const ties = sessions.filter(s=>s.winner==='tie').length;
+
+  let totalSessions = Number(summary.totalSessions || 0);
+  let humanWins = Number(summary.humanWins || 0);
+  let aiWins = Number(summary.aiWins || 0);
+  let ties = Number(summary.ties || 0);
+  let participants = Number(summary.totalParticipants || 0);
+  let totalRounds = totalSessions * MAX_ROUNDS;
+  let ranking = Array.isArray(summary.ranking) ? [...summary.ranking] : [];
+
+  if(rawUnlocked){
+    totalSessions = sessions.length;
+    participants = countUniqueParticipantsFromSessions(sessions);
+    totalRounds = sessions.reduce((a,s)=>a+(Array.isArray(s.rounds)?s.rounds.length:0),0);
+    humanWins = sessions.filter(s=>s.winner==='human').length;
+    aiWins = sessions.filter(s=>s.winner==='ai').length;
+    ties = sessions.filter(s=>s.winner==='tie').length;
+    ranking = [...sessions].sort((a,b)=>{
+      const scoreDiff = Number(b.humanScore||0)-Number(a.humanScore||0);
+      if(scoreDiff) return scoreDiff;
+      const ta = new Date(a.date||0).getTime();
+      const tb = new Date(b.date||0).getTime();
+      if(ta!==tb) return ta-tb;
+      return String(a.id||'').localeCompare(String(b.id||''));
+    }).slice(0,20);
+  }
+
   const total = Math.max(1, humanWins+aiWins+ties);
 
-  const ranking = [...sessions].sort((a,b)=>b.humanScore-a.humanScore || new Date(a.date)-new Date(b.date));
   const rankHTML = ranking.slice(0,20).map((s,i)=>`<div class="rank-row"><div class="rank-pos">${i+1}</div><div><b>${escapeHTML(s.participantId)}</b><br><span style="color:var(--muted2)">${new Date(s.date).toLocaleDateString('ko-KR')}</span></div><div>${s.humanScore}점</div><div>${s.winner==='human'?'인간 승':s.winner==='ai'?'AI 승':'무승부'}</div></div>`).join('');
 
-  const rowsHTML = sessions.map(s=>{
+  const rowsHTML = rawUnlocked ? sessions.map(s=>{
     const badgeCls = s.winner==='human'?'human':(s.winner==='ai'?'ai':'tie');
     const badgeText = s.winner==='human'?'인간 승':(s.winner==='ai'?'AI 승':'무승부');
     const d = new Date(s.date);
@@ -1753,24 +2030,30 @@ function renderData(){
       <td>${d.toLocaleDateString('ko-KR')} ${d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</td>
       <td>${s.humanScore}</td>
       <td>${s.aiScore}</td>
-      <td>${s.rounds.length}</td>
+      <td>${Array.isArray(s.rounds)?s.rounds.length:0}</td>
       <td><span class="winner-badge ${badgeCls}">${badgeText}</span></td>
     </tr>`;
-  }).join('');
+  }).join('') : '';
+
+  const participantNote = rawUnlocked
+    ? `<div style="font-size:11px;color:var(--muted2);margin-top:-22px;margin-bottom:24px;">※ 참가자 수는 학교 이메일 기준 고유 인원으로 계산하며, 이메일이 없는 과거 기록만 익명 참가자 ID를 보조 기준으로 사용합니다.</div>`
+    : `<div style="font-size:11px;color:var(--muted2);margin-top:-22px;margin-bottom:24px;">※ 참가자 수는 별도 참가자 인덱스의 고유 학교 이메일 수입니다. 기존 기록은 관리자 원자료를 처음 열 때 한 번 자동 동기화됩니다.</div>`;
 
   return `<div class="wrap page">
-    <div class="page-head"><h2>데이터 & 결과</h2><p>이 사이트를 통해 수집된 <b>전체 실험 데이터셋</b>입니다 — 참가자 전체의 세션이 누적되어 표시됩니다.</p></div>
-    <div class="notice">ℹ️ 세션 목록과 순위는 열람할 수 있지만, 전체 JSON/CSV 다운로드에는 관리자 암호가 필요합니다. 모든 기기의 기록은 Firebase Firestore의 동일한 데이터베이스에 누적됩니다.</div>
+    <div class="page-head"><h2>데이터 & 결과</h2><p>공개 화면에는 통계와 TOP 20만 표시하고, 전체 세션 원자료와 다운로드는 관리자 암호로 보호합니다.</p></div>
     <div class="data-grid">
       <div class="data-card"><div class="lbl">누적 참가자</div><div class="val">${participants.toLocaleString()}</div></div>
       <div class="data-card"><div class="lbl">완료된 세션</div><div class="val">${totalSessions.toLocaleString()}</div></div>
       <div class="data-card"><div class="lbl">수집된 라운드</div><div class="val">${totalRounds.toLocaleString()}</div></div>
       <div class="data-card"><div class="lbl">AI 승률</div><div class="val">${(aiWins/total*100).toFixed(0)}%</div></div>
     </div>
+    ${participantNote}
+
     <div class="panel" style="margin-bottom:24px;">
       <h3>참가자 순위 TOP 20</h3>
       ${ranking.length ? `<div class="rank-list">${rankHTML}</div>` : `<div class="empty">아직 순위 데이터가 없습니다.</div>`}
     </div>
+
     <div class="panel" style="margin-bottom:24px;">
       <h3>인간 vs AI 승률</h3>
       <div style="display:flex; height:26px; border-radius:6px; overflow:hidden; margin-top:14px;">
@@ -1784,21 +2067,32 @@ function renderData(){
         <div>⚪ 무승부 ${(ties/total*100).toFixed(1)}% (${ties}건)</div>
       </div>
     </div>
+
     <div class="panel">
-      <div class="data-toolbar">
-        <h3 style="margin:0;">전체 세션 원자료 (${totalSessions}건)</h3>
-        <div style="display:flex; gap:8px;">
-          <button class="btn-ghost" data-action="export-json">⬇ JSON 다운로드</button>
-          <button class="btn-ghost" data-action="export-csv">⬇ CSV 다운로드 (라운드 단위)</button>
+      ${!rawUnlocked ? `
+        <div style="text-align:center;padding:30px 12px;">
+          <h3 style="font-size:15px;color:var(--text);margin-bottom:10px;">🔒 전체 세션 원자료</h3>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:18px;">세션 목록, 이메일이 포함된 JSON/CSV 다운로드는 관리자 암호 확인 후 사용할 수 있습니다.</p>
+          <button class="btn-primary" data-action="unlock-raw">암호 입력 후 원자료 열기</button>
         </div>
-      </div>
-      ${totalSessions===0
-        ? `<div class="empty">아직 수집된 데이터가 없습니다. 게임에 참여하면 이곳에 누적됩니다.</div>`
-        : `<div class="table-scroll"><table>
-             <thead><tr><th>참가자 ID</th><th>일시</th><th>내 점수</th><th>AI 점수</th><th>라운드</th><th>결과</th></tr></thead>
-             <tbody>${rowsHTML}</tbody>
-           </table></div>`
-      }
+      ` : `
+        <div class="data-toolbar">
+          <h3 style="margin:0;">전체 세션 원자료 (${totalSessions}건)</h3>
+          <div style="display:flex; gap:8px;">
+            <button class="btn-ghost" data-action="export-json">⬇ JSON 다운로드</button>
+            <button class="btn-ghost" data-action="export-csv">⬇ CSV 다운로드 (라운드 단위)</button>
+          </div>
+        </div>
+        ${state.loadingSessions
+          ? `<div class="empty">전체 원자료를 불러오는 중…</div>`
+          : totalSessions===0
+            ? `<div class="empty">아직 수집된 데이터가 없습니다.</div>`
+            : `<div class="table-scroll"><table>
+                 <thead><tr><th>참가자 ID</th><th>일시</th><th>내 점수</th><th>AI 점수</th><th>라운드</th><th>결과</th></tr></thead>
+                 <tbody>${rowsHTML}</tbody>
+               </table></div>`
+        }
+      `}
     </div>
   </div>`;
 }
@@ -1827,13 +2121,66 @@ function renderFAQ(){
     ['로그인이 필요한가요?', '네. 한민고 이메일로 로그인을 해야하며, 그 후 자동으로 부여되는 익명 참가자 ID로 참여할 수 있습니다.'],
     ['왜 라운드가 7번인가요?', '짧은 시행 안에서도 패턴 학습과 탐색-활용(exploration-exploitation) 딜레마를 관찰할 수 있는 표준적인 길이로 설정했습니다.'],
     ['AI는 어떻게 학습하나요?', 'Q-learning 알고리즘이 매 라운드 보상을 받아 세그먼트별 가치를 갱신하며, 인간과 동일한 룰렛 환경에서 독립적으로 선택합니다.'],
-    ['내 데이터는 어디에 저장되나요?', '모든 세션 기록은 익명 참가자 ID와 함께 공유 데이터셋에 저장되며, "데이터 & 결과" 페이지에서 전체가 공개됩니다.'],
+    ['내 데이터는 어디에 저장되나요?', '모든 세션 기록은 익명 참가자 ID와 함께 Firebase Firestore에 저장됩니다. 공개 화면에는 통계와 TOP 20만 표시되고, 전체 원자료와 다운로드는 관리자 암호 확인 후 열 수 있습니다.'],
     ['패턴 힌트는 어떻게 활용하나요?', '최근 당첨 세그먼트와 누적 빈도를 참고하면 핫 세그먼트가 이동하는 규칙을 추론하는 데 도움이 됩니다.'],
   ];
   return `<div class="wrap page">
     <div class="page-head"><h2>자주 묻는 질문</h2></div>
     ${items.map(([q,a])=>`<div class="faq-item"><h3>${q}</h3><p>${a}</p></div>`).join('')}
   </div>`;
+}
+
+const HOME_STATS_CACHE_MS = 60 * 1000;
+const homeStatsCache = {sessions:null, participants:null, rounds:null, loadedAt:0, loading:false};
+
+async function fetchHomeStats(force=false){
+  const fresh = homeStatsCache.loadedAt && (Date.now()-homeStatsCache.loadedAt < HOME_STATS_CACHE_MS);
+  if(!force && (fresh || homeStatsCache.loading)) return;
+  homeStatsCache.loading = true;
+  try{
+    // 세션 수는 기존 gameResults 권한만으로 집계한다.
+    const sessionCountSnap = await getCountFromServer(collection(db, SESSION_COLLECTION));
+    const sessions = Number(sessionCountSnap.data().count || 0);
+    homeStatsCache.sessions = sessions;
+    homeStatsCache.rounds = sessions * MAX_ROUNDS;
+
+    // 참가자 수는 gameResults의 고유 학교 이메일 기준으로 정확히 계산한다.
+    // 별도 participants 컬렉션을 읽지 않으므로 해당 컬렉션의 Firestore 권한에 영향을 받지 않는다.
+    homeStatsCache.participants = await getExactParticipantCount();
+
+    if(state.allSessionsLoaded){
+      homeStatsCache.sessions = state.allSessions.length;
+      homeStatsCache.participants = countUniqueParticipantsFromSessions(state.allSessions);
+      homeStatsCache.rounds = state.allSessions.reduce((a,s)=>a+(Array.isArray(s.rounds)?s.rounds.length:0),0);
+    }
+    homeStatsCache.loadedAt = Date.now();
+  }catch(e){
+    console.error('홈 세션 통계 집계 실패', e);
+  }finally{
+    homeStatsCache.loading = false;
+    paintHomeStats();
+  }
+}
+
+function paintHomeStats(){
+  const pEl = document.getElementById('home-participants');
+  const sEl = document.getElementById('home-sessions');
+  const rEl = document.getElementById('home-rounds');
+  if(!pEl || !sEl || !rEl) return;
+
+  if(state.allSessionsLoaded){
+    const list = state.allSessions;
+    const participants = countUniqueParticipantsFromSessions(list);
+    const rounds = list.reduce((a,s)=>a+(Array.isArray(s.rounds)?s.rounds.length:0),0);
+    pEl.textContent = participants.toLocaleString();
+    sEl.textContent = list.length.toLocaleString();
+    rEl.textContent = rounds.toLocaleString();
+    return;
+  }
+
+  pEl.textContent = homeStatsCache.participants===null ? '권한 필요' : homeStatsCache.participants.toLocaleString();
+  sEl.textContent = homeStatsCache.sessions===null ? '…' : homeStatsCache.sessions.toLocaleString();
+  rEl.textContent = homeStatsCache.rounds===null ? '…' : homeStatsCache.rounds.toLocaleString();
 }
 
 function render(){
@@ -1860,25 +2207,8 @@ function render(){
   if(state.view==='home') updateHomeStats();
 }
 function updateHomeStats(){
-  // 홈 화면은 Firestore를 읽지 않는다.
-  // 사용자가 데이터 페이지에서 이미 전체 기록을 불러온 경우에만 캐시된 값으로 통계를 표시한다.
-  const pEl = document.getElementById('home-participants');
-  const sEl = document.getElementById('home-sessions');
-  const rEl = document.getElementById('home-rounds');
-
-  if(!state.allSessionsLoaded){
-    if(pEl) pEl.textContent = '—';
-    if(sEl) sEl.textContent = '—';
-    if(rEl) rEl.textContent = '—';
-    return;
-  }
-
-  const list = state.allSessions;
-  const participants = new Set(list.map(s=>s.participantId)).size;
-  const rounds = list.reduce((a,s)=>a+(Array.isArray(s.rounds)?s.rounds.length:0),0);
-  if(pEl) pEl.textContent = participants.toLocaleString();
-  if(sEl) sEl.textContent = list.length.toLocaleString();
-  if(rEl) rEl.textContent = rounds.toLocaleString();
+  paintHomeStats();
+  fetchHomeStats();
 }
 
 /* ---------- 이벤트 위임 ---------- */
@@ -1901,6 +2231,7 @@ document.getElementById('app').addEventListener('click', (e)=>{
     case 'show-results': state.view='results'; render(); break;
     case 'login': login(); break;
     case 'logout': logout(); break;
+    case 'unlock-raw': unlockRawData(); break;
     case 'export-json': exportJSON(); break;
     case 'export-csv': exportCSV(); break;
     case 'tutorial-end': endTutorial(); break;
@@ -1939,6 +2270,7 @@ document.getElementById('app').addEventListener('keydown', (e)=>{
       state.authenticated=true;
       state.userEmail=valid;
     }
+    state.adminUnlocked = sessionStorage.getItem('nr_admin_unlocked_v1') === '1';
   }catch(e){}
 
   // 초기 접속에서는 Firestore 전체 컬렉션을 읽지 않는다.
